@@ -705,6 +705,20 @@ body {
   line-height: 1.55;
 }
 
+/* 全局记忆库面板 */
+.mem-list-global {
+  max-height: 250px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mem-scope {
+  font-size: 10.5px;
+  color: var(--faint);
+  margin-top: 2px;
+}
+
 @keyframes pulse {
   0%,
   100% {

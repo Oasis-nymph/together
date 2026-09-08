@@ -4,6 +4,7 @@ import { RunPanel } from './ui/RunPanel';
 import { EmergencePanel } from './ui/EmergencePanel';
 import { SearchPanel } from './ui/SearchPanel';
 import { ApiPanel } from './ui/ApiPanel';
+import { MemoryPanel } from './ui/MemoryPanel';
 import { NeuronPanel } from './ui/NeuronPanel';
 import { EdgePanel } from './ui/EdgePanel';
 import { TimeBar } from './ui/TimeBar';
@@ -42,6 +43,7 @@ export default function App() {
           <RunPanel />
           <EmergencePanel />
           <SearchPanel />
+          <MemoryPanel />
           <ApiPanel />
         </div>
         {selectedNeuronId && <NeuronPanel />}
