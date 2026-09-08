@@ -24,13 +24,13 @@
 
 ## 状态 · Status
 
-**v0.2** —— 可视化 + 真实 AI 对话 + 多层级记忆库 + 涌现观察 + 涌现场景穷举；细节见 [PLAN.md](PLAN.md) 进度表 / visuals + real AI chat + multi-level memory + emergence metrics + scenario search.
+**v0.3** —— 可视化 + 真实 AI 对话（多模型/并发可调/自动重试）+ 多层级记忆库（自动整理）+ 涌现观察（裁判打分、任务完成度）+ 涌现场景穷举（并行）；细节见 [PLAN.md](PLAN.md) 进度表 / visuals + real AI chat (multi-model, tunable concurrency, retry) + multi-level memory (auto distill) + emergence metrics (judge scores, task quality) + scenario search (parallel).
 
 ## 本地运行 · Run Locally
 
 ```bash
 npm install
-npm run dev     # 前端(5173) + LLM 代理(8787)
+npm run dev     # 一键启动：前端(5173) + LLM 代理(8787)
 ```
 
 生产模式 / Production：`npm run build && npm start` → http://localhost:8787
