@@ -1,0 +1,66 @@
+export type Vec3 = [number, number, number];
+
+/** 神经元 = 一个 AI 对话体 */
+export interface Neuron {
+  id: string;
+  name: string;
+  role: string;         // 角色 / 身份描述
+  systemPrompt: string; // 系统提示词
+  pos: Vec3;
+  radius: number;
+}
+
+export type Direction = 'forward' | 'backward' | 'both';
+
+/** 边 = 一段可定义的关系 */
+export interface Edge {
+  id: string;
+  source: string;
+  target: string;
+  relationType: string; // 指令 / 批判 / 总结 / 投票 / 竞争 / 自定义
+  direction: Direction; // 语义方向
+  weight: number;       // 权重（给模型的先验提示，不是硬规则）
+}
+
+/** 消息 = 沿边流动的信号（元信息由平台标注，取舍由模型判断） */
+export interface Message {
+  id: string;
+  round: number;
+  fromId: string;
+  toId: string;
+  relationType: string;
+  content: string;
+}
+
+export interface Settings {
+  topology: string;
+  count: number;
+  density: number;
+  regime: string;
+  wave: number;
+  noise: number;
+  seed: number;
+}
+
+export const ROUNDS = 80;
+
+export const RELATION_TYPES = ['指令', '批判', '总结', '投票', '竞争', '自定义'];
+
+export const REGIME_OPTIONS = [
+  { value: 'simple', label: '简单' },
+  { value: 'order', label: '有序' },
+  { value: 'edge', label: '混沌边缘' },
+  { value: 'chaos', label: '混沌' },
+  { value: 'disorder', label: '无序' },
+  { value: 'custom', label: '自定义' },
+];
+
+export const TOPOLOGY_OPTIONS = [
+  { value: 'clusters', label: '分簇（神经网络感）' },
+  { value: 'ring', label: '环' },
+  { value: 'star', label: '星形' },
+  { value: 'grid', label: '网格' },
+  { value: 'smallworld', label: '小世界' },
+  { value: 'full', label: '全连接' },
+  { value: 'random', label: '随机' },
+];

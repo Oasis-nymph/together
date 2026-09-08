@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>together · 四维纯白空间原型</title>
+<meta name="description" content="together —— 四维纯白空间里的神经元可视化原型：3D 空间 + 时间作为第四维，支持网络预设与自定义。" />
+<style>
+  :root{
+    --accent:#22c55e;
+    --accent-soft:rgba(34,197,94,.55);
+  }
+  html,body{margin:0;height:100%;overflow:hidden;background:#ffffff;}
+  body{
+    font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",system-ui,-apple-system,sans-serif;
+    color:#1c2635;
+    -webkit-font-smoothing:antialiased;
+  }
+  #app{position:fixed;inset:0;}
+  canvas{display:block;}
+
+  .ui{position:fixed;inset:0;pointer-events:none;z-index:10;}
+  .ui .box{pointer-events:auto;}
+
+  /* 左上：品牌 */
+  .top-left{position:absolute;top:22px;left:26px;}
+  .brand{font-size:26px;font-weight:800;letter-spacing:.02em;}
+  .brand .dot{color:var(--accent);}
+  .tag{margin-top:2px;font-size:12px;color:#8a97a8;letter-spacing:.06em;}
+
+  /* 右上：操作提示 */
+  .hint{position:absolute;top:24px;right:26px;font-size:12px;color:#9aa6b5;background:rgba(255,255,255,.7);backdrop-filter:blur(8px);border:1px solid rgba(0,0,0,.05);border-radius:999px;padding:7px 14px;}
+
+  /* 右侧：控制面板 */
+  .panel{position:absolute;top:88px;right:22px;width:232px;
+    background:rgba(255,255,255,.82);backdrop-filter:blur(14px);
+    border:1px solid rgba(0,0,0,.06);border-radius:18px;padding:16px 18px;
+    box-shadow:0 8px 30px rgba(20,40,80,.10);
+    display:flex;flex-direction:column;gap:14px;}
+  .panel h3{margin:0;font-size:11px;letter-spacing:.14em;color:#8a97a8;text-transform:uppercase;font-weight:700;}
+  .field{display:flex;flex-direction:column;gap:6px;}
+  .field .lbl{display:flex;justify-content:space-between;font-size:12px;color:#5a6b7f;font-weight:600;}
+  .field .lbl b{color:var(--accent);font-variant-numeric:tabular-nums;}
+  .field select,.field input[type=range]{width:100%;}
+  .field select{font-size:13px;padding:7px 9px;border:1px solid #e3e8f0;border-radius:10px;background:#fff;color:#1c2635;}
+  .field input[type=range]{accent-color:var(--accent);cursor:pointer;}
+
+  .btn{border:none;background:var(--accent);color:#fff;font-weight:700;font-size:13px;padding:9px 14px;border-radius:10px;cursor:pointer;transition:.15s;width:100%;}
+  .btn:hover{filter:brightness(1.06);}
+  .hidden{display:none !important;}
+
+  /* 左下：图例 */
+  .legend{position:absolute;left:26px;bottom:26px;font-size:12px;color:#8a97a8;display:flex;flex-direction:column;gap:6px;}
+  .legend .row{display:flex;align-items:center;gap:8px;}
+  .legend .sw2{width:9px;height:9px;border-radius:50%;}
+  .legend .sw2.node{background:var(--accent);box-shadow:0 0 8px var(--accent-soft);}
+  .legend .sw2.sig{background:var(--accent);opacity:.6;}
+
+  /* 底部：时间轴（第四维） */
+  .timebar{position:absolute;left:50%;bottom:26px;transform:translateX(-50%);display:flex;align-items:center;gap:14px;
+    background:rgba(255,255,255,.75);backdrop-filter:blur(12px);border:1px solid rgba(0,0,0,.06);border-radius:999px;
+    padding:12px 20px;box-shadow:0 6px 30px rgba(20,40,80,.08);}
+  .timebar button{border:none;background:var(--accent);color:#fff;width:34px;height:34px;border-radius:50%;cursor:pointer;font-size:14px;line-height:1;display:flex;align-items:center;justify-content:center;transition:.15s;}
+  .timebar input[type=range]{width:260px;accent-color:var(--accent);cursor:pointer;}
+  .timebar .round{font-size:13px;color:#5a6b7f;font-variant-numeric:tabular-nums;min-width:92px;text-align:center;font-weight:600;}
+
+  @media(max-width:720px){
+    .panel{display:none;}
+    .timebar input[type=range]{width:150px;}
+    .hint{display:none;}
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div class="ui">
+  <div class="top-left box">
+    <div class="brand">together<span class="dot">.</span></div>
+    <div class="tag">四维纯白空间 · 神经元可视化 · 原型</div>
+  </div>
+  <div class="hint box">拖拽旋转 · 滚轮缩放 · 右键平移</div>
+
+  <!-- 控制面板：预设 + 自定义 -->
+  <div class="panel box">
+    <h3>网络 · 预设 / 自定义</h3>
+    <div class="field">
+      <div class="lbl"><span>系统状态</span></div>
+      <select id="regime">
+        <option value="simple">简单</option>
+        <option value="order">有序</option>
+        <option value="edge" selected>混沌边缘</option>
+        <option value="chaos">混沌</option>
+        <option value="disorder">无序</option>
+        <option value="custom">自定义</option>
+      </select>
+    </div>
+    <div class="field hidden" id="custom-fields">
+      <div class="lbl"><span>波动强度</span><b id="wave-val">0.50</b></div>
+      <input type="range" id="wave" min="0" max="1" step="0.05" value="0.5">
+      <div class="lbl"><span>噪声</span><b id="noise-val">0.30</b></div>
+      <input type="range" id="noise" min="0" max="1" step="0.05" value="0.3">
+    </div>
+    <div class="field">
+      <div class="lbl"><span>连接方式</span></div>
+      <select id="topo">
+        <option value="clusters" selected>分簇（神经网络感）</option>
+        <option value="ring">环</option>
+        <option value="star">星形</option>
+        <option value="grid">网格</option>
+        <option value="smallworld">小世界</option>
+        <option value="full">全连接</option>
+        <option value="random">随机</option>
+      </select>
+    </div>
+    <div class="field">
+      <div class="lbl"><span>神经元数量</span><b id="cnt-val">14</b></div>
+      <input type="range" id="cnt" min="6" max="24" step="1" value="14">
+    </div>
+    <div class="field">
+      <div class="lbl"><span>连接密度</span><b id="den-val">0.25</b></div>
+      <input type="range" id="den" min="0" max="1" step="0.05" value="0.25">
+    </div>
+    <button class="btn" id="btn-random">随机重新生成</button>
+  </div>
+
+  <div class="legend box">
+    <div class="row"><span class="sw2 node"></span>神经元（绿色，发光 = 当前活跃）</div>
+    <div class="row"><span class="sw2 sig"></span>信号（光点沿连接流动）</div>
+  </div>
+
+  <div class="timebar box">
+    <button id="play" title="播放/暂停">⏸</button>
+    <input type="range" id="slider" min="0" max="79" value="0" />
+    <div class="round" id="round-label">第 1 / 80 轮</div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ---------------- 常量（神经元固定绿色） ---------------- */
+const ROUNDS = 80;
+const WHITE = new THREE.Color('#ffffff');
+const GREEN = new THREE.Color('#22c55e');          // 神经元主色（固定绿）
+const cIdleNode = new THREE.Color('#1fa85a');      // 静息态：稍深的绿
+const cOnNode = new THREE.Color('#a7f3d0');        // 活跃态：提亮成薄荷绿
+const cIdleEdge = new THREE.Color('#c3ccd8');      // 连接静息：浅灰
+const cOnEdge = new THREE.Color('#86efac');        // 连接活跃：淡绿
+
+const params = { count:14, topology:'clusters', density:0.25, regime:'edge', wave:0.5, noise:0.3 };
+
+/* 系统状态光谱：简单 → 有序 → 混沌边缘 → 混沌 → 无序（映射到波动强度 + 噪声） */
+const REGIMES = {
+  simple:  { wave:1.0,  noise:0.0  },
+  order:   { wave:1.0,  noise:0.05 },
+  edge:    { wave:1.0,  noise:0.22 },
+  chaos:   { wave:0.5,  noise:0.6  },
+  disorder:{ wave:0.0,  noise:0.9  },
+};
+function getRegime(){
+  return params.regime === 'custom' ? { wave:params.wave, noise:params.noise } : REGIMES[params.regime];
+}
+
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+let rng = mulberry32(20260721);
+
+/* ---------------- 场景 ---------------- */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#ffffff');
+scene.fog = new THREE.Fog('#ffffff', 18, 50);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(0, 0, 16);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 4;
+controls.maxDistance = 46;
+
+scene.add(new THREE.AmbientLight('#ffffff', 0.95));
+const key = new THREE.DirectionalLight('#ffffff', 1.6); key.position.set(8, 10, 6); scene.add(key);
+const fill = new THREE.DirectionalLight('#eaf1ff', 0.6); fill.position.set(-6, -4, 8); scene.add(fill);
+
+/* 白色柔光纹理（用材质 color 染色） */
+function glowTexture(){
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const x = c.getContext('2d');
+  const gr = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0.00, 'rgba(255,255,255,1)');
+  gr.addColorStop(0.35, 'rgba(255,255,255,0.55)');
+  gr.addColorStop(1.00, 'rgba(255,255,255,0)');
+  x.fillStyle = gr; x.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+const glowTex = glowTexture();
+
+/* ---------------- 神经元造型（简化）：光滑胞体 + 内核 ---------------- */
+function makeNeuronBody(r, mat, coreMat){
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(new THREE.SphereGeometry(r, 48, 48), mat));
+  g.add(new THREE.Mesh(new THREE.SphereGeometry(r*0.5, 32, 32), coreMat));
+  return g;
+}
+
+/* ---------------- 拓扑：位置生成 ---------------- */
+function genPositions(count, topology){
+  const pts = [];
+  if (topology === 'ring'){
+    const R = 6.5;
+    for (let i = 0; i < count; i++){
+      const a = i / count * Math.PI * 2;
+      pts.push(new THREE.Vector3(Math.cos(a)*R, 0, Math.sin(a)*R));
+    }
+  } else if (topology === 'star'){
+    pts.push(new THREE.Vector3(0, 0, 0));
+    const R = 6.5;
+    for (let i = 1; i < count; i++){
+      const a = (i - 1) / Math.max(1, count - 1) * Math.PI * 2;
+      pts.push(new THREE.Vector3(Math.cos(a)*R, Math.sin(a)*0.4, Math.sin(a)*R));
+    }
+  } else if (topology === 'grid'){
+    const side = Math.ceil(Math.sqrt(count));
+    const sp = 1.6;
+    for (let i = 0; i < count; i++){
+      const x = (i % side) - (side - 1) / 2;
+      const z = Math.floor(i / side) - (side - 1) / 2;
+      pts.push(new THREE.Vector3(x*sp, 0, z*sp));
+    }
+  } else if (topology === 'smallworld'){
+    const R = 6.5;
+    for (let i = 0; i < count; i++){
+      const a = i / count * Math.PI * 2;
+      pts.push(new THREE.Vector3(Math.cos(a)*R, (rng()-0.5)*1.4, Math.sin(a)*R));
+    }
+  } else { // clusters / full / random
+    const centers = [[-4,-1,0],[2,2,-1],[0,-2,2],[3,-3,-2]];
+    for (let i = 0; i < count; i++){
+      const c = centers[i % centers.length];
+      pts.push(new THREE.Vector3(c[0]+(rng()-0.5)*3.4, c[1]+(rng()-0.5)*2.4, c[2]+(rng()-0.5)*2.4));
+    }
+  }
+  return pts;
+}
+
+/* ---------------- 拓扑：边（联系）生成 ---------------- */
+function genEdges(count, topology, density){
+  const es = [];
+  const add = (a, b) => { if (a !== b && a >= 0 && b >= 0 && a < count && b < count) es.push({ a, b }); };
+
+  if (topology === 'ring'){
+    for (let i = 0; i < count; i++) add(i, (i + 1) % count);
+  } else if (topology === 'star'){
+    for (let i = 1; i < count; i++) add(0, i);
+  } else if (topology === 'grid'){
+    const side = Math.ceil(Math.sqrt(count));
+    for (let i = 0; i < count; i++){
+      if ((i % side) < side - 1 && i + 1 < count) add(i, i + 1);
+      if (i + side < count) add(i, i + side);
+    }
+  } else if (topology === 'smallworld'){
+    for (let i = 0; i < count; i++){ add(i, (i + 1) % count); add(i, (i + 2) % count); }
+  } else if (topology === 'full'){
+    for (let i = 0; i < count; i++) for (let j = i + 1; j < count; j++) add(i, j);
+  } else if (topology === 'random'){
+    for (let i = 0; i < count * 2; i++) add(Math.floor(rng()*count), Math.floor(rng()*count));
+  } else { // clusters：k 近邻
+    for (let i = 0; i < count; i++){
+      const d = [];
+      for (let j = 0; j < count; j++) if (j !== i) d.push([j, pos[i].distanceTo(pos[j])]);
+      d.sort((x, y) => x[1] - y[1]);
+      for (let k = 0; k < 3; k++){ const j = d[k][0]; if (i < j) add(i, j); }
+    }
+  }
+
+  // 密度：额外随机边
+  const extra = Math.round(density * count * 1.2);
+  for (let e = 0; e < extra; e++) add(Math.floor(rng()*count), Math.floor(rng()*count));
+  return es;
+}
+
+/* ---------------- 网络构建 ---------------- */
+let netGroup = null;
+let pos = [], edges = [], nodes = [], edgeObjs = [];
+let activeEdgesByRound = [], activeNodesByRound = [];
+
+function build(){
+  if (netGroup){ scene.remove(netGroup); disposeGroup(netGroup); }
+  netGroup = new THREE.Group();
+  scene.add(netGroup);
+
+  pos = genPositions(params.count, params.topology);
+  edges = genEdges(params.count, params.topology, params.density);
+  nodes = []; edgeObjs = [];
+
+  for (let i = 0; i < params.count; i++){
+    const r = 0.24 + rng()*0.14;
+    // 简化神经元：光滑胞体 + 内核，共用主材质，活跃时一起点亮
+    const mat = new THREE.MeshStandardMaterial({ color:cIdleNode, roughness:0.4, metalness:0.05, emissive:GREEN, emissiveIntensity:0 });
+    const coreMat = new THREE.MeshBasicMaterial({ color:'#bbf7d0', transparent:true, opacity:0.35 });
+    const grp = makeNeuronBody(r, mat, coreMat);
+
+    const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map:glowTex, color:GREEN, transparent:true, opacity:0.14, blending:THREE.AdditiveBlending, depthWrite:false }));
+    const baseHaloScale = r * 6;
+    halo.scale.set(baseHaloScale, baseHaloScale, 1);
+    grp.add(halo);
+
+    grp.position.copy(pos[i]);
+    netGroup.add(grp);
+    nodes.push({ mat, coreMat, halo, baseHaloScale, active:0 });
+  }
+
+  for (const e of edges){
+    const p0 = pos[e.a], p3 = pos[e.b];
+    const chord = new THREE.Vector3().subVectors(p3, p0);
+    const len = chord.length() || 1;
+    let perp = new THREE.Vector3(1, 0, 0).cross(chord);
+    if (perp.lengthSq() < 1e-4) perp = new THREE.Vector3(0, 1, 0).cross(chord);
+    perp.normalize();
+
+    const off = (rng()*0.35 + 0.12) * len * (rng() < 0.5 ? 1 : -1);
+    const p1 = p0.clone().add(chord.clone().multiplyScalar(0.33)).add(perp.clone().multiplyScalar(off));
+    const p2 = p0.clone().add(chord.clone().multiplyScalar(0.66)).add(perp.clone().multiplyScalar(off));
+    const curve = new THREE.CatmullRomCurve3([p0, p1, p2, p3]);
+
+    const tube = new THREE.Mesh(
+      new THREE.TubeGeometry(curve, 48, 0.026, 8, false),
+      new THREE.MeshStandardMaterial({ color:cIdleEdge, roughness:0.55, metalness:0.1, emissive:GREEN, emissiveIntensity:0 })
+    );
+    netGroup.add(tube);
+
+    const part = new THREE.Sprite(new THREE.SpriteMaterial({ map:glowTex, color:GREEN, transparent:true, opacity:0.10, blending:THREE.AdditiveBlending, depthWrite:false }));
+    part.scale.set(0.22, 0.22, 1);
+    netGroup.add(part);
+
+    edgeObjs.push({ curve, tube, part, phase: rng(), speed: 0.05 + rng()*0.05, active:0 });
+  }
+
+  ({ activeEdgesByRound, activeNodesByRound } = generateActivity());
+  setRound(0);
+}
+
+function disposeGroup(g){
+  g.traverse(o => {
+    if (o.geometry) o.geometry.dispose();
+    if (o.material){ (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m.dispose()); }
+  });
+}
+
+/* ---------------- 时间：放电波（受系统状态影响） ---------------- */
+function generateActivity(){
+  const { wave: waveStrength, noise } = getRegime();
+  const eBy = new Array(ROUNDS), nBy = new Array(ROUNDS);
+  let active = new Set([0]);
+  const visited = new Set([0]);
+  for (let r = 0; r < ROUNDS; r++){
+    const eSet = new Set(), nSet = new Set();
+
+    // 1) 波动：有序传播（波强 < 1 时会被随机重启打断）
+    if (waveStrength > 0){
+      const next = new Set();
+      for (const n of active){
+        nSet.add(n);
+        for (let ei = 0; ei < edges.length; ei++){
+          const { a, b } = edges[ei];
+          if (a === n || b === n){
+            const m = (a === n) ? b : a;
+            eSet.add(ei);
+            if (!visited.has(m)) next.add(m);
+          }
+        }
+      }
+      for (const m of next){ nSet.add(m); visited.add(m); }
+      if (rng() > waveStrength) active = new Set([Math.floor(rng()*params.count)]);
+      else if (next.size) active = next;
+      else active = new Set([Math.floor(rng()*params.count)]);
+    }
+
+    // 2) 噪声：随机放电
+    const k = Math.round(noise * edges.length * 0.4);
+    for (let i = 0; i < k; i++){
+      const ei = Math.floor(rng()*edges.length);
+      eSet.add(ei);
+      nSet.add(edges[ei].a);
+      nSet.add(edges[ei].b);
+    }
+
+    eBy[r] = eSet; nBy[r] = nSet;
+  }
+  return { activeEdgesByRound: eBy, activeNodesByRound: nBy };
+}
+
+/* ---------------- 时间轴 UI ---------------- */
+const slider = document.getElementById('slider');
+const roundLabel = document.getElementById('round-label');
+const playBtn = document.getElementById('play');
+slider.max = ROUNDS - 1;
+
+let round = 0, playing = true, roundTimer = 420, clock = 0;
+
+function setRound(r){
+  round = ((r % ROUNDS) + ROUNDS) % ROUNDS;
+  slider.value = round;
+  roundLabel.textContent = `第 ${round + 1} / ${ROUNDS} 轮`;
+}
+function updatePlayIcon(){ playBtn.textContent = playing ? '⏸' : '▶'; }
+slider.addEventListener('input', () => setRound(parseInt(slider.value, 10)));
+playBtn.addEventListener('click', () => { playing = !playing; updatePlayIcon(); });
+
+/* ---------------- 控制面板 UI ---------------- */
+const $ = s => document.querySelector(s);
+$('#regime').addEventListener('change', e => {
+  params.regime = e.target.value;
+  $('#custom-fields').classList.toggle('hidden', params.regime !== 'custom');
+  build();
+});
+$('#wave').addEventListener('input', e => { $('#wave-val').textContent = parseFloat(e.target.value).toFixed(2); });
+$('#wave').addEventListener('change', e => { params.wave = parseFloat(e.target.value); build(); });
+$('#noise').addEventListener('input', e => { $('#noise-val').textContent = parseFloat(e.target.value).toFixed(2); });
+$('#noise').addEventListener('change', e => { params.noise = parseFloat(e.target.value); build(); });
+$('#topo').addEventListener('change', e => { params.topology = e.target.value; build(); });
+$('#cnt').addEventListener('input', e => { $('#cnt-val').textContent = e.target.value; });
+$('#cnt').addEventListener('change', e => { params.count = parseInt(e.target.value, 10); build(); });
+$('#den').addEventListener('input', e => { $('#den-val').textContent = e.target.value; });
+$('#den').addEventListener('change', e => { params.density = parseFloat(e.target.value); build(); });
+$('#btn-random').addEventListener('click', () => { rng = mulberry32(Math.floor(Math.random()*1e9)); build(); });
+
+/* ---------------- 动画 ---------------- */
+let last = performance.now();
+function animate(t){
+  requestAnimationFrame(animate);
+  const dt = Math.min(0.05, (t - last) / 1000); last = t;
+  clock += dt;
+
+  if (playing){
+    roundTimer -= dt * 1000;
+    if (roundTimer <= 0){ roundTimer = 420; setRound(round + 1); }
+  }
+
+  const eSet = activeEdgesByRound[round];
+  const nSet = activeNodesByRound[round];
+
+  for (let i = 0; i < edgeObjs.length; i++){
+    const o = edgeObjs[i];
+    o.active = eSet.has(i) ? 1 : 0;
+    o.phase += dt * o.speed * (o.active ? 3.0 : 1.0);
+    o.part.position.copy(o.curve.getPoint(o.phase % 1));
+    const target = o.active ? 0.95 : 0.10;
+    o.part.material.opacity += (target - o.part.material.opacity) * Math.min(1, dt*8);
+    o.part.scale.setScalar(0.18 + o.active*0.1);
+  }
+
+  for (let i = 0; i < edgeObjs.length; i++){
+    const o = edgeObjs[i];
+    o.tube.material.emissiveIntensity += ((o.active ? 0.55 : 0) - o.tube.material.emissiveIntensity) * Math.min(1, dt*8);
+    o.tube.material.color.lerp(o.active ? cOnEdge : cIdleEdge, Math.min(1, dt*8));
+  }
+
+  for (let i = 0; i < nodes.length; i++){
+    const nd = nodes[i];
+    const on = nSet.has(i) ? 1 : 0;
+    nd.active += (on - nd.active) * Math.min(1, dt*8);
+    const a = nd.active;
+    nd.mat.emissiveIntensity = a * 0.55;
+    nd.mat.color.lerp(on ? cOnNode : cIdleNode, Math.min(1, dt*8));
+    nd.coreMat.opacity = 0.35 + a*0.5;
+    const hs = nd.baseHaloScale * (1 + a*0.5 + Math.sin(clock*3 + i)*0.05*a);
+    nd.halo.scale.set(hs, hs, 1);
+    nd.halo.material.opacity = 0.14 + a*0.6;
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+build();
+updatePlayIcon();
+animate(performance.now());
+</script>
+</body>
+</html>
