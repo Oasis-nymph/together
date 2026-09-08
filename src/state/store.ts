@@ -13,6 +13,8 @@ import {
   type Memory,
 } from '../core/memory';
 import { makeRng } from '../core/random';
+import { SCENARIO_TEMPLATES } from '../core/scenarios';
+import { generateVariants, type ScenarioResult } from '../core/search';
 import { OPENAI_DEFAULT_URL, ROUNDS } from '../core/types';
 import type {
   ApiConfig,
@@ -84,6 +86,13 @@ interface TogetherState {
   runs: RunRecord[];
   selectedRunId: string | null;
 
+  // 涌现场景穷举
+  searchRunning: boolean;
+  searchProgress: { current: number; total: number } | null;
+  searchResults: ScenarioResult[];
+  searchError: string;
+  searchController: AbortController | null;
+
   setSettings: (patch: Partial<Settings>) => void;
   rebuild: () => void;
   recomputeActivity: () => void;
@@ -113,6 +122,11 @@ interface TogetherState {
   clearMemories: () => void;
   selectRun: (id: string | null) => void;
   clearRuns: () => void;
+  loadTemplate: (id: string) => void;
+  startSearch: (opts: { templateId: string; variants: number; rounds: number }) => Promise<void>;
+  stopSearch: () => void;
+  loadScenarioResult: (r: ScenarioResult) => void;
+  viewScenarioResult: (r: ScenarioResult) => void;
 }
 
 export const useStore = create<TogetherState>()(
@@ -146,6 +160,12 @@ export const useStore = create<TogetherState>()(
 
       runs: [],
       selectedRunId: null,
+
+      searchRunning: false,
+      searchProgress: null,
+      searchResults: [],
+      searchError: '',
+      searchController: null,
 
       setSettings: (patch) => set((s) => ({ settings: { ...s.settings, ...patch } })),
 
@@ -450,6 +470,141 @@ export const useStore = create<TogetherState>()(
       clearMemories: () => set({ memories: [] }),
       selectRun: (id) => set({ selectedRunId: id }),
       clearRuns: () => set({ runs: [], selectedRunId: null }),
+
+      loadTemplate: (id) => {
+        const tpl = SCENARIO_TEMPLATES.find((t) => t.id === id);
+        if (!tpl) return;
+        const rng = makeRng(Math.floor(Math.random() * 1e9));
+        const pos = genPositions(tpl.count, tpl.topology, rng);
+        const raw = genEdges(tpl.count, tpl.topology, tpl.density, pos, rng);
+        const neurons: Neuron[] = pos.map((p, i) => ({
+          id: uid('n'),
+          name: `${tpl.roles[i % tpl.roles.length]} ${i + 1}`,
+          role: tpl.roles[i % tpl.roles.length],
+          systemPrompt: tpl.prompts[i % tpl.prompts.length],
+          pos: p,
+          radius: 0.24 + rng() * 0.14,
+        }));
+        const edges: Edge[] = raw.map((e) => ({
+          id: uid('e'),
+          source: neurons[e.a].id,
+          target: neurons[e.b].id,
+          relationType: tpl.relationType,
+          direction: 'both',
+          weight: 0.5,
+        }));
+        set({
+          neurons,
+          edges,
+          task: tpl.task,
+          settings: {
+            ...get().settings,
+            topology: tpl.topology,
+            count: tpl.count,
+            density: tpl.density,
+            regime: tpl.regime,
+            seed: Math.floor(Math.random() * 1e9),
+          },
+          selectedNeuronId: null,
+          selectedEdgeId: null,
+          round: 0,
+        });
+        get().recomputeActivity();
+      },
+
+      startSearch: async (opts) => {
+        const { api } = get();
+        if (!api.model.trim()) {
+          set({ searchError: '请先在「模型设置」里填写模型名' });
+          return;
+        }
+        if (api.provider === 'openai' && !api.apiKey.trim()) {
+          set({ searchError: '请先在「模型设置」里填写 API Key' });
+          return;
+        }
+        const proxyOk = await checkProxy();
+        if (!proxyOk) {
+          set({ searchError: '连不上本地代理(:8787)，场景穷举需要本地运行（npm run dev）。' });
+          return;
+        }
+        const tpl = SCENARIO_TEMPLATES.find((t) => t.id === opts.templateId);
+        if (!tpl) return;
+        const variants = generateVariants(tpl, opts.variants, makeRng(Math.floor(Math.random() * 1e9)));
+        const controller = new AbortController();
+        set({
+          searchRunning: true,
+          searchError: '',
+          searchController: controller,
+          searchProgress: { current: 0, total: variants.length },
+          searchResults: [],
+        });
+        try {
+          const results: ScenarioResult[] = [];
+          for (let i = 0; i < variants.length; i++) {
+            if (controller.signal.aborted) break;
+            set((s) => ({ searchProgress: { current: i, total: variants.length } }));
+            const v = variants[i];
+            const messages = await runSimulation({
+              neurons: v.neurons,
+              edges: v.edges,
+              task: v.task,
+              api,
+              rounds: opts.rounds,
+              signal: controller.signal,
+              memories: [],
+              onMessage: () => {},
+            });
+            const metrics = computeMetrics(messages, v.neurons.length);
+            const real = messages.filter((m) => m.real && m.relationType !== '错误' && m.content);
+            const summary = real.length ? real[real.length - 1].content.slice(0, 90) : '（无有效输出）';
+            results.push({ variant: v, metrics, messages, summary });
+            set((s) => ({
+              searchResults: [...results].sort((a, b) => b.metrics.score - a.metrics.score),
+            }));
+          }
+        } catch (e) {
+          set({ searchError: e instanceof Error ? e.message : String(e) });
+        } finally {
+          set({ searchRunning: false });
+        }
+      },
+
+      stopSearch: () => {
+        get().searchController?.abort();
+        set({ searchRunning: false });
+      },
+
+      loadScenarioResult: (r) => {
+        set({
+          neurons: r.variant.neurons,
+          edges: r.variant.edges,
+          task: r.variant.task,
+          settings: {
+            ...get().settings,
+            topology: r.variant.topology,
+            regime: r.variant.regime,
+            density: r.variant.density,
+            count: r.variant.neurons.length,
+          },
+          selectedNeuronId: null,
+          selectedEdgeId: null,
+          round: 0,
+        });
+        get().recomputeActivity();
+      },
+
+      viewScenarioResult: (r) => {
+        const rounds = r.messages.length ? Math.max(...r.messages.map((m) => m.round + 1)) : 0;
+        const rec: RunRecord = {
+          id: uid('run'),
+          at: Date.now(),
+          task: r.variant.task,
+          rounds,
+          messages: r.messages,
+          metrics: r.metrics,
+        };
+        set((s) => ({ runs: [rec, ...s.runs].slice(0, 5), selectedRunId: rec.id }));
+      },
     }),
     {
       name: 'together-v1',

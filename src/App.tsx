@@ -2,6 +2,7 @@ import { Scene } from './three/Scene';
 import { ControlPanel } from './ui/ControlPanel';
 import { RunPanel } from './ui/RunPanel';
 import { EmergencePanel } from './ui/EmergencePanel';
+import { SearchPanel } from './ui/SearchPanel';
 import { ApiPanel } from './ui/ApiPanel';
 import { NeuronPanel } from './ui/NeuronPanel';
 import { EdgePanel } from './ui/EdgePanel';
@@ -40,6 +41,7 @@ export default function App() {
           <ControlPanel />
           <RunPanel />
           <EmergencePanel />
+          <SearchPanel />
           <ApiPanel />
         </div>
         {selectedNeuronId && <NeuronPanel />}

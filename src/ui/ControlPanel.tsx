@@ -1,5 +1,6 @@
 import { useStore } from '../state/store';
 import { REGIME_OPTIONS, TOPOLOGY_OPTIONS } from '../core/types';
+import { SCENARIO_TEMPLATES } from '../core/scenarios';
 
 export function ControlPanel() {
   const settings = useStore((s) => s.settings);
@@ -9,6 +10,7 @@ export function ControlPanel() {
   const rebuild = useStore((s) => s.rebuild);
   const addNeuron = useStore((s) => s.addNeuron);
   const setConnectMode = useStore((s) => s.setConnectMode);
+  const loadTemplate = useStore((s) => s.loadTemplate);
 
   const rebuildOnRelease = () => rebuild();
 
@@ -123,6 +125,26 @@ export function ControlPanel() {
           onPointerUp={rebuildOnRelease}
           onKeyUp={rebuildOnRelease}
         />
+      </div>
+
+      <div className="field">
+        <div className="lbl">
+          <span>场景模板（角色社会）</span>
+        </div>
+        <select
+          defaultValue=""
+          onChange={(e) => {
+            if (e.target.value) loadTemplate(e.target.value);
+            e.target.value = '';
+          }}
+        >
+          <option value="">— 载入一个 —</option>
+          {SCENARIO_TEMPLATES.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.emoji} {t.name}
+            </option>
+          ))}
+        </select>
       </div>
 
       <button
