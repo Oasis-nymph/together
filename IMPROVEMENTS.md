@@ -1,6 +1,6 @@
 # together 代码改进清单（按优先级）
 
-> 对应 paper.md §5，每条标注：难度 / 价值 / 涉及文件。
+> 对应 [papers/paper-01-emergence.md](papers/paper-01-emergence.md) §5，每条标注：难度 / 价值 / 涉及文件。
 
 ## P0 —— 先做（直接提升"科学性"与可靠性）
 
