@@ -6,7 +6,7 @@ export interface RunOptions {
   neurons: Neuron[];
   edges: Edge[];
   task: string;
-  api: ApiConfig;
+  getApi: (neuronId: string) => ApiConfig; // 每个神经元可指定不同模型
   rounds: number;
   signal: AbortSignal;
   memories?: Memory[];
@@ -20,7 +20,7 @@ export interface RunOptions {
  * 平台只收集 + 标注元信息，取舍交给模型。
  */
 export async function runSimulation(opts: RunOptions): Promise<Message[]> {
-  const { neurons, edges, task, api, rounds, signal, memories = [], onMessage, onRoundDone } = opts;
+  const { neurons, edges, task, getApi, rounds, signal, memories = [], onMessage, onRoundDone } = opts;
   const nameOf = (id: string) => neurons.find((n) => n.id === id)?.name ?? id;
   const all: Message[] = [];
   let pending: Message[] = [];
@@ -49,7 +49,7 @@ export async function runSimulation(opts: RunOptions): Promise<Message[]> {
       }
     }
 
-    pending = await speakAll(neurons, edges, inbox, task, api, r, signal, (m) => {
+    pending = await speakAll(neurons, edges, inbox, task, getApi, r, signal, (m) => {
       all.push(m);
       onMessage(m);
     }, memories);

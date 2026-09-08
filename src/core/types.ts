@@ -10,6 +10,17 @@ export interface Neuron {
   systemPrompt: string; // 系统提示词
   pos: Vec3;
   radius: number;
+  modelId?: string | null; // 指定使用的模型（模型库 id）；缺省/null = 跟随全局设置
+}
+
+/** 模型库：一个可复用的模型配置（不同神经元可各用各的 AI） */
+export interface ModelProfile {
+  id: string;
+  name: string; // 显示名，如 "GPT-4o mini" / "本地 Qwen"
+  provider: 'openai' | 'ollama';
+  baseURL: string;
+  apiKey: string;
+  model: string;
 }
 
 export type Direction = 'forward' | 'backward' | 'both';

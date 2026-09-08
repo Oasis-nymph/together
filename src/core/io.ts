@@ -1,4 +1,4 @@
-import type { Edge, Group, Neuron, Settings } from './types';
+import type { Edge, Group, ModelProfile, Neuron, Settings } from './types';
 import type { Memory } from './memory';
 
 /** 项目文件：画布、群组、记忆与设置的完整快照（导出/导入） */
@@ -12,6 +12,7 @@ export interface ProjectFile {
   edges: Edge[];
   groups: Group[];
   memories: Memory[];
+  modelProfiles: ModelProfile[];
 }
 
 export function makeProjectFile(p: {
@@ -22,6 +23,7 @@ export function makeProjectFile(p: {
   edges: Edge[];
   groups: Group[];
   memories: Memory[];
+  modelProfiles: ModelProfile[];
 }): ProjectFile {
   return { app: 'together', version: 1, ...p };
 }
@@ -41,5 +43,6 @@ export function parseProjectFile(data: unknown): ProjectFile | null {
     edges: d.edges as Edge[],
     groups: Array.isArray(d.groups) ? (d.groups as Group[]) : [],
     memories: Array.isArray(d.memories) ? (d.memories as Memory[]) : [],
+    modelProfiles: Array.isArray(d.modelProfiles) ? (d.modelProfiles as ModelProfile[]) : [],
   };
 }

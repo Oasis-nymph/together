@@ -64,13 +64,13 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
 
 let seq = 0;
 
-/** 一轮放电：有收信的神经元各自调一次模型，把回复广播给语义方向上的邻居 */
+/** 一轮放电：有收信的神经元各自调一次模型（各自指定的模型），把回复广播给语义方向上的邻居 */
 export async function speakAll(
   neurons: Neuron[],
   edges: Edge[],
   inboxMap: Map<string, InboxItem[]>,
   task: string,
-  api: ApiConfig,
+  getApi: (neuronId: string) => ApiConfig,
   round: number,
   signal: AbortSignal,
   onMessage: (m: Message) => void,
@@ -83,6 +83,7 @@ export async function speakAll(
   await mapLimit(speakers, 2, async (n) => {
     const items = inboxMap.get(n.id)!;
     const { system, user } = buildPrompt(n, task, items, memories);
+    const api = getApi(n.id);
 
     let content: string;
     try {

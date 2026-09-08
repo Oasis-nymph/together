@@ -23,6 +23,7 @@ import type {
   Edge,
   Group,
   Message,
+  ModelProfile,
   Neuron,
   RunRecord,
   Settings,
@@ -75,6 +76,7 @@ interface TogetherState {
 
   // 真实 AI 运行
   api: ApiConfig;
+  modelProfiles: ModelProfile[];
   task: string;
   runRounds: number;
   running: boolean;
@@ -123,6 +125,11 @@ interface TogetherState {
   setPlaying: (on: boolean) => void;
 
   setApi: (patch: Partial<ApiConfig>) => void;
+  addModelProfile: (p: Omit<ModelProfile, 'id'>) => string;
+  updateModelProfile: (id: string, patch: Partial<ModelProfile>) => void;
+  removeModelProfile: (id: string) => void;
+  setNeuronModel: (neuronId: string, modelId: string | null) => void;
+  resolveApi: (neuronId: string) => ApiConfig;
   setTask: (t: string) => void;
   setRunRounds: (n: number) => void;
   startRun: () => void;
@@ -170,6 +177,7 @@ export const useStore = create<TogetherState>()(
       connectFromId: null,
 
       api: { ...DEFAULT_API },
+      modelProfiles: [],
       task: '讨论：合作是如何在自利个体之间产生的？请最终给出一个共同结论。',
       runRounds: 6,
       running: false,
@@ -332,16 +340,48 @@ export const useStore = create<TogetherState>()(
       setPlaying: (on) => set({ playing: on }),
 
       setApi: (patch) => set((s) => ({ api: { ...s.api, ...patch } })),
+
+      addModelProfile: (p) => {
+        const id = uid('mp');
+        set((s) => ({ modelProfiles: [...s.modelProfiles, { ...p, id }] }));
+        return id;
+      },
+      updateModelProfile: (id, patch) =>
+        set((s) => ({
+          modelProfiles: s.modelProfiles.map((p) => (p.id === id ? { ...p, ...patch } : p)),
+        })),
+      removeModelProfile: (id) =>
+        set((s) => ({
+          modelProfiles: s.modelProfiles.filter((p) => p.id !== id),
+          neurons: s.neurons.map((n) => (n.modelId === id ? { ...n, modelId: null } : n)),
+        })),
+      setNeuronModel: (neuronId, modelId) =>
+        set((s) => ({
+          neurons: s.neurons.map((n) => (n.id === neuronId ? { ...n, modelId } : n)),
+        })),
+      resolveApi: (neuronId) => {
+        const { api, modelProfiles, neurons } = get();
+        const n = neurons.find((x) => x.id === neuronId);
+        const p = n?.modelId ? modelProfiles.find((x) => x.id === n.modelId) : null;
+        if (!p) return api;
+        return {
+          provider: p.provider,
+          baseURL: p.baseURL,
+          apiKey: p.apiKey,
+          model: p.model,
+          temperature: api.temperature, // 温度沿用全局
+        };
+      },
       setTask: (t) => set({ task: t }),
       setRunRounds: (n) => set({ runRounds: n }),
 
       startRun: async () => {
-        const { neurons, edges, api, task, runRounds } = get();
-        if (!api.model.trim()) {
-          set({ runError: '请先在「模型设置」里填写模型名' });
+        const { neurons, edges, api, task, runRounds, modelProfiles } = get();
+        if (!api.model.trim() && modelProfiles.length === 0) {
+          set({ runError: '请先在「模型设置」里配置全局模型，或在模型库中添加模型' });
           return;
         }
-        if (api.provider === 'openai' && !api.apiKey.trim()) {
+        if (api.provider === 'openai' && !api.apiKey.trim() && modelProfiles.length === 0) {
           set({ runError: '请先在「模型设置」里填写 API Key（Ollama 不需要）' });
           return;
         }
@@ -361,7 +401,7 @@ export const useStore = create<TogetherState>()(
             neurons,
             edges,
             task,
-            api,
+            getApi: (id) => get().resolveApi(id),
             rounds: runRounds,
             signal: controller.signal,
             memories: get().memories,
@@ -434,10 +474,11 @@ export const useStore = create<TogetherState>()(
       },
 
       distillMemory: async (neuronId) => {
-        const { neurons, memories, api, task, runMessages } = get();
+        const { neurons, memories, task, runMessages } = get();
         const n = neurons.find((x) => x.id === neuronId);
         if (!n) return;
-        if (!api.model.trim()) {
+        const resolved = get().resolveApi(neuronId);
+        if (!resolved.model.trim()) {
           set({ runError: '请先在「模型设置」里填写模型名' });
           return;
         }
@@ -459,10 +500,10 @@ export const useStore = create<TogetherState>()(
             '\n' +
             mine.map((m) => `- [第${m.round + 1}轮] ${m.content.slice(0, 120)}`).join('\n');
           const content = await chat({
-            provider: api.provider,
-            baseURL: api.baseURL,
-            apiKey: api.apiKey,
-            model: api.model,
+            provider: resolved.provider,
+            baseURL: resolved.baseURL,
+            apiKey: resolved.apiKey,
+            model: resolved.model,
             temperature: 0.5,
             messages: [
               { role: 'system', content: system },
@@ -576,7 +617,7 @@ export const useStore = create<TogetherState>()(
               neurons: v.neurons,
               edges: v.edges,
               task: v.task,
-              api,
+              getApi: () => api, // 场景变体神经元未指定模型 → 用全局
               rounds: opts.rounds,
               signal: controller.signal,
               memories: [],
@@ -680,9 +721,11 @@ export const useStore = create<TogetherState>()(
         })),
 
       onboardNeuron: async (neuronId) => {
-        const { neurons, api, task, memories } = get();
+        const { neurons, task, memories } = get();
         const n = neurons.find((x) => x.id === neuronId);
-        if (!n || !api.model.trim()) return;
+        if (!n) return;
+        const resolved = get().resolveApi(neuronId);
+        if (!resolved.model.trim()) return;
         const proxyOk = await checkProxy();
         if (!proxyOk) return; // 无代理时静默跳过（可视化仍可用）
         set({ onboardingId: neuronId });
@@ -697,10 +740,10 @@ export const useStore = create<TogetherState>()(
             '第一行自我介绍，之后每行一条印象，共不超过 4 行。';
           const user = `总任务：${task}\n\n环境里已有的成员：\n${intro || '（空环境）'}\n\n请自我介绍并记录初始印象。`;
           const content = await chat({
-            provider: api.provider,
-            baseURL: api.baseURL,
-            apiKey: api.apiKey,
-            model: api.model,
+            provider: resolved.provider,
+            baseURL: resolved.baseURL,
+            apiKey: resolved.apiKey,
+            model: resolved.model,
             temperature: 0.7,
             messages: [
               { role: 'system', content: system },
@@ -770,8 +813,17 @@ export const useStore = create<TogetherState>()(
       },
 
       exportProject: () => {
-        const { task, runRounds, settings, neurons, edges, groups, memories } = get();
-        const file = makeProjectFile({ task, runRounds, settings, neurons, edges, groups, memories });
+        const { task, runRounds, settings, neurons, edges, groups, memories, modelProfiles } = get();
+        const file = makeProjectFile({
+          task,
+          runRounds,
+          settings,
+          neurons,
+          edges,
+          groups,
+          memories,
+          modelProfiles,
+        });
         const blob = new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
@@ -794,6 +846,7 @@ export const useStore = create<TogetherState>()(
           edges: f.edges,
           groups: f.groups,
           memories: f.memories,
+          modelProfiles: f.modelProfiles,
           selectedNeuronId: null,
           selectedEdgeId: null,
           round: 0,
@@ -806,6 +859,7 @@ export const useStore = create<TogetherState>()(
       name: 'together-v1',
       partialize: (s) => ({
         api: s.api,
+        modelProfiles: s.modelProfiles,
         task: s.task,
         runRounds: s.runRounds,
         memories: s.memories,

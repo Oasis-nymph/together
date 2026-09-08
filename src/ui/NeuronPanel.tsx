@@ -15,6 +15,9 @@ export function NeuronPanel() {
   const setMembership = useStore((s) => s.setMembership);
   const onboardingId = useStore((s) => s.onboardingId);
   const duplicateNeuron = useStore((s) => s.duplicateNeuron);
+  const modelProfiles = useStore((s) => s.modelProfiles);
+  const setNeuronModel = useStore((s) => s.setNeuronModel);
+  const api = useStore((s) => s.api);
 
   if (!neuron) return null;
 
@@ -58,6 +61,21 @@ export function NeuronPanel() {
           placeholder="告诉这个 AI：你是谁、如何回应、要记录什么…"
           onChange={(e) => updateNeuron(neuron.id, { systemPrompt: e.target.value })}
         />
+      </div>
+
+      <div className="field">
+        <label>使用模型（不同神经元可用不同 AI）</label>
+        <select
+          value={neuron.modelId ?? ''}
+          onChange={(e) => setNeuronModel(neuron.id, e.target.value || null)}
+        >
+          <option value="">跟随全局{api.model ? `（${api.model}）` : '（未配置）'}</option>
+          {modelProfiles.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}（{p.model}）
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="field">
