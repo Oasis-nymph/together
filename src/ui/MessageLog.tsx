@@ -4,19 +4,34 @@ import type { Message } from '../core/types';
 export function MessageLog() {
   const round = useStore((s) => s.round);
   const messagesByRound = useStore((s) => s.messagesByRound);
-  const runMessages = useStore((s) => s.runMessages);
   const running = useStore((s) => s.running);
+  const liveMessages = useStore((s) => s.runMessages);
+  const runs = useStore((s) => s.runs);
+  const selectedRunId = useStore((s) => s.selectedRunId);
+  const selectRun = useStore((s) => s.selectRun);
   const neurons = useStore((s) => s.neurons);
 
   const nameOf = (id: string) => neurons.find((n) => n.id === id)?.name ?? id;
+
+  const selected = runs.find((r) => r.id === selectedRunId);
+  const realMessages: Message[] = running
+    ? liveMessages
+    : selected
+      ? selected.messages
+      : runs[0]?.messages ?? [];
 
   const flat: Message[] = [];
   for (let r = 0; r <= round && r < messagesByRound.length; r++) {
     flat.push(...messagesByRound[r]);
   }
   const shownSim = flat.slice(-60);
-  const shownReal = runMessages.slice(-80);
+  const shownReal = realMessages.slice(-80);
   const clamp = (s: string, n = 120) => (s.length > n ? s.slice(0, n) + '…' : s);
+
+  const fmtTime = (t: number) => {
+    const d = new Date(t);
+    return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+  };
 
   return (
     <div className="log panel">
@@ -24,6 +39,20 @@ export function MessageLog() {
         <h3>信号记录</h3>
         {running && <span className="live">● 运行中</span>}
       </div>
+
+      {runs.length > 0 && !running && (
+        <select
+          className="run-select"
+          value={selectedRunId ?? runs[0].id}
+          onChange={(e) => selectRun(e.target.value || null)}
+        >
+          {runs.map((r) => (
+            <option key={r.id} value={r.id}>
+              运行 {fmtTime(r.at)} · {r.metrics.score} 分 · {r.messages.length} 条消息
+            </option>
+          ))}
+        </select>
+      )}
 
       {shownReal.length > 0 && (
         <>

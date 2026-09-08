@@ -2,7 +2,8 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { genEdges, genPositions } from '../core/topology';
 import { generateActivity, getRegimeParams } from '../core/activity';
-import { speakAll, type InboxItem } from '../core/scheduler';
+import { runSimulation } from '../core/runner';
+import { computeMetrics } from '../core/emergence';
 import { chat, checkProxy } from '../core/llm';
 import {
   EVENT_HALF_LIFE,
@@ -13,7 +14,15 @@ import {
 } from '../core/memory';
 import { makeRng } from '../core/random';
 import { OPENAI_DEFAULT_URL, ROUNDS } from '../core/types';
-import type { ApiConfig, Edge, Message, Neuron, Settings, Vec3 } from '../core/types';
+import type {
+  ApiConfig,
+  Edge,
+  Message,
+  Neuron,
+  RunRecord,
+  Settings,
+  Vec3,
+} from '../core/types';
 
 let counter = 0;
 const uid = (p: string) => `${p}-${++counter}-${Math.floor(Math.random() * 1e6)}`;
@@ -71,6 +80,10 @@ interface TogetherState {
   memories: Memory[];
   distilling: string | null;
 
+  // 运行历史与涌现观察
+  runs: RunRecord[];
+  selectedRunId: string | null;
+
   setSettings: (patch: Partial<Settings>) => void;
   rebuild: () => void;
   recomputeActivity: () => void;
@@ -98,6 +111,8 @@ interface TogetherState {
   distillMemory: (neuronId: string) => Promise<void>;
   removeMemory: (id: string) => void;
   clearMemories: () => void;
+  selectRun: (id: string | null) => void;
+  clearRuns: () => void;
 }
 
 export const useStore = create<TogetherState>()(
@@ -128,6 +143,9 @@ export const useStore = create<TogetherState>()(
 
       memories: [],
       distilling: null,
+
+      runs: [],
+      selectedRunId: null,
 
       setSettings: (patch) => set((s) => ({ settings: { ...s.settings, ...patch } })),
 
@@ -290,53 +308,33 @@ export const useStore = create<TogetherState>()(
         const controller = new AbortController();
         set({ running: true, runError: '', runMessages: [], runRound: 0, runController: controller });
 
-        const nameOf = (id: string) => neurons.find((n) => n.id === id)?.name ?? id;
-
         try {
-          let pending: Message[] = [];
-          for (let r = 0; r < runRounds; r++) {
-            if (controller.signal.aborted) break;
-            const { neurons: ns, edges: es, memories } = get();
-            const inbox = new Map<string, InboxItem[]>();
-            const add = (id: string, item: InboxItem) => {
-              if (!inbox.has(id)) inbox.set(id, []);
-              inbox.get(id)!.push(item);
-            };
-            if (r === 0) {
-              for (const n of ns) {
-                add(n.id, {
-                  fromId: 'user',
-                  fromName: '总任务',
-                  relationType: '任务',
-                  weight: 1,
-                  content: task,
-                });
-              }
-            } else {
-              for (const m of pending) {
-                add(m.toId, {
-                  fromId: m.fromId,
-                  fromName: nameOf(m.fromId),
-                  relationType: m.relationType,
-                  weight: m.weight ?? 1,
-                  content: m.content,
-                });
-              }
-            }
-            set({ runRound: r + 1 });
-            pending = await speakAll(
-              ns,
-              es,
-              inbox,
+          await runSimulation({
+            neurons,
+            edges,
+            task,
+            api,
+            rounds: runRounds,
+            signal: controller.signal,
+            memories: get().memories,
+            onMessage: (m) =>
+              set((s) => ({ runMessages: [...s.runMessages, m], runRound: m.round + 1 })),
+            onRoundDone: (msgs) => {
+              if (msgs.length) get().addEventMemories(msgs); // 事件自动写入记忆库
+            },
+          });
+          const msgs = get().runMessages;
+          if (msgs.length) {
+            const metrics = computeMetrics(msgs, neurons.length);
+            const rec: RunRecord = {
+              id: uid('run'),
+              at: Date.now(),
               task,
-              api,
-              r,
-              controller.signal,
-              (m) => set((s) => ({ runMessages: [...s.runMessages, m] })),
-              memories
-            );
-            if (pending.length) get().addEventMemories(pending); // 事件自动写入记忆库
-            if (!pending.length) break; // 全体沉默，提前结束
+              rounds: runRounds,
+              messages: msgs,
+              metrics,
+            };
+            set((s) => ({ runs: [rec, ...s.runs].slice(0, 5), selectedRunId: rec.id }));
           }
         } catch (e) {
           set({ runError: e instanceof Error ? e.message : String(e) });
@@ -450,6 +448,8 @@ export const useStore = create<TogetherState>()(
 
       removeMemory: (id) => set((s) => ({ memories: s.memories.filter((m) => m.id !== id) })),
       clearMemories: () => set({ memories: [] }),
+      selectRun: (id) => set({ selectedRunId: id }),
+      clearRuns: () => set({ runs: [], selectedRunId: null }),
     }),
     {
       name: 'together-v1',

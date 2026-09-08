@@ -1,3 +1,5 @@
+import type { EmergenceMetrics } from './emergence';
+
 export type Vec3 = [number, number, number];
 
 /** 神经元 = 一个 AI 对话体 */
@@ -46,6 +48,16 @@ export interface ApiConfig {
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
+}
+
+/** 一次真实运行的记录（用于回看与涌现观察） */
+export interface RunRecord {
+  id: string;
+  at: number;
+  task: string;
+  rounds: number;
+  messages: Message[];
+  metrics: EmergenceMetrics;
 }
 
 export const OPENAI_DEFAULT_URL = 'https://api.openai.com/v1';
