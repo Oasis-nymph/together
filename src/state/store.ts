@@ -814,6 +814,8 @@ export const useStore = create<TogetherState>()(
 
       exportProject: () => {
         const { task, runRounds, settings, neurons, edges, groups, memories, modelProfiles } = get();
+        // 安全：导出时抹掉所有 API Key（导入后需重新填写）
+        const safeProfiles = modelProfiles.map((p) => ({ ...p, apiKey: '' }));
         const file = makeProjectFile({
           task,
           runRounds,
@@ -822,7 +824,7 @@ export const useStore = create<TogetherState>()(
           edges,
           groups,
           memories,
-          modelProfiles,
+          modelProfiles: safeProfiles,
         });
         const blob = new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' });
         const a = document.createElement('a');
