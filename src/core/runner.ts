@@ -12,6 +12,9 @@ export interface RunOptions {
   memories?: Memory[];
   onMessage: (m: Message) => void;
   onRoundDone?: (roundMsgs: Message[], round: number) => void;
+  concurrency?: number; // 同时说话的神经元数（1~8）
+  /** 系统状态：wave/noise 作用于消息投递；tempDelta/maxLen 作用于模型行为。缺省 = 原行为 */
+  regime?: { wave: number; noise: number; tempDelta?: number; maxLen?: number };
 }
 
 /**
@@ -21,6 +24,9 @@ export interface RunOptions {
  */
 export async function runSimulation(opts: RunOptions): Promise<Message[]> {
   const { neurons, edges, task, getApi, rounds, signal, memories = [], onMessage, onRoundDone } = opts;
+  const concurrency = opts.concurrency ?? 2;
+  const regime = opts.regime ?? { wave: 1, noise: 0, tempDelta: 0, maxLen: 900 };
+  const behavior = { temperatureDelta: regime.tempDelta ?? 0, maxLen: regime.maxLen ?? 900 };
   const nameOf = (id: string) => neurons.find((n) => n.id === id)?.name ?? id;
   const all: Message[] = [];
   let pending: Message[] = [];
@@ -52,7 +58,26 @@ export async function runSimulation(opts: RunOptions): Promise<Message[]> {
     pending = await speakAll(neurons, edges, inbox, task, getApi, r, signal, (m) => {
       all.push(m);
       onMessage(m);
-    }, memories);
+    }, memories, concurrency, behavior);
+
+    // 系统状态作用于投递层
+    if (regime.wave < 1 || regime.noise > 0) {
+      const delivered: Message[] = [];
+      for (const m of pending) {
+        if (Math.random() < regime.wave) delivered.push(m);
+        if (regime.noise > 0 && Math.random() < regime.noise) {
+          const others = neurons.filter((x) => x.id !== m.toId && x.id !== m.fromId);
+          if (others.length) {
+            delivered.push({
+              ...m,
+              id: `${m.id}-n`,
+              toId: others[Math.floor(Math.random() * others.length)].id,
+            });
+          }
+        }
+      }
+      pending = delivered;
+    }
 
     if (onRoundDone) onRoundDone(pending, r);
     if (!pending.length) break; // 全体沉默，提前结束

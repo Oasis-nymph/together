@@ -28,7 +28,8 @@ function buildPrompt(
   n: Neuron,
   task: string,
   items: InboxItem[],
-  memories: Memory[]
+  memories: Memory[],
+  maxLen: number
 ): { system: string; user: string } {
   const persona = n.systemPrompt.trim()
     ? n.systemPrompt
@@ -39,7 +40,7 @@ function buildPrompt(
     '如何取舍、加权、合并完全由你自己判断，平台不做任何聚合。' +
     '你的回复会被记录进记忆库、可能被分享，请把重要事实与结论写清楚。回复请直接、简洁。';
   const list = items
-    .map((i) => `- [来自: ${i.fromName}｜关系: ${i.relationType}｜权重: ${i.weight}] ${i.content}`)
+    .map((i) => `- [来自: ${i.fromName}｜关系: ${i.relationType}｜权重: ${i.weight}] ${i.content.slice(0, maxLen)}`)
     .join('\n');
   const memCtx = buildMemoryContext(memories, n.id, 6);
   const user =
@@ -49,10 +50,10 @@ function buildPrompt(
   return { system, user };
 }
 
-async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const results: R[] = new Array(items.length);
   let i = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
     while (i < items.length) {
       const idx = i++;
       results[idx] = await fn(items[idx]);
@@ -64,6 +65,11 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
 
 let seq = 0;
 
+export interface SpeakBehavior {
+  temperatureDelta: number; // 系统状态对温度的偏移（混沌越高温）
+  maxLen: number; // 单条消息截断长度
+}
+
 /** 一轮放电：有收信的神经元各自调一次模型（各自指定的模型），把回复广播给语义方向上的邻居 */
 export async function speakAll(
   neurons: Neuron[],
@@ -74,16 +80,19 @@ export async function speakAll(
   round: number,
   signal: AbortSignal,
   onMessage: (m: Message) => void,
-  memories: Memory[] = []
+  memories: Memory[] = [],
+  concurrency = 2,
+  behavior: SpeakBehavior = { temperatureDelta: 0, maxLen: 900 }
 ): Promise<Message[]> {
   const speakers = neurons.filter((n) => (inboxMap.get(n.id)?.length ?? 0) > 0);
   const produced: Message[] = [];
   const stamp = Date.now();
 
-  await mapLimit(speakers, 2, async (n) => {
+  await mapLimit(speakers, concurrency, async (n) => {
     const items = inboxMap.get(n.id)!;
-    const { system, user } = buildPrompt(n, task, items, memories);
-    const api = getApi(n.id);
+    const { system, user } = buildPrompt(n, task, items, memories, behavior.maxLen);
+    const api = { ...getApi(n.id) };
+    api.temperature = Math.min(2, Math.max(0, api.temperature + behavior.temperatureDelta));
 
     let content: string;
     try {

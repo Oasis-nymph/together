@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Scene } from './three/Scene';
 import { ControlPanel } from './ui/ControlPanel';
 import { RunPanel } from './ui/RunPanel';
@@ -16,6 +17,7 @@ export default function App() {
   const selectedEdgeId = useStore((s) => s.selectedEdgeId);
   const connectMode = useStore((s) => s.connectMode);
   const connectFromId = useStore((s) => s.connectFromId);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
     <div className="app">
@@ -27,7 +29,7 @@ export default function App() {
           <div className="brand">
             together<span className="dot">.</span>
           </div>
-          <div className="tag">四维纯白空间 · AI 神经元 · Phase 1</div>
+          <div className="tag">四维纯白空间 · AI 神经元 · v0.3</div>
         </div>
 
         <div className={`hint${connectMode ? ' hint-on' : ''}`}>
@@ -38,7 +40,11 @@ export default function App() {
             : '拖拽神经元移动 · 点击选中 · 滚轮缩放 · 右键平移'}
         </div>
 
-        <div className="col-right">
+        <button className="menu-btn" onClick={() => setMenuOpen((v) => !v)}>
+          {menuOpen ? '✕ 关闭面板' : '☰ 面板'}
+        </button>
+
+        <div className={`col-right${menuOpen ? ' open' : ''}`}>
           <ControlPanel />
           <RunPanel />
           <EmergencePanel />

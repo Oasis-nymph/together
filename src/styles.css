@@ -335,6 +335,20 @@ body {
   line-height: 1.5;
 }
 
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+  cursor: pointer;
+  line-height: 1.4;
+}
+.check-row input {
+  accent-color: var(--accent);
+}
+
 .run-error {
   background: #fff1f2;
   border: 1px solid #fecdd3;
@@ -827,9 +841,41 @@ body {
   color: var(--ink);
 }
 
+/* 移动端：面板默认收起，☰ 按钮展开 */
+.menu-btn {
+  display: none;
+}
+
 @media (max-width: 720px) {
-  .panel-right {
+  .col-right {
     display: none;
+  }
+  .col-right.open {
+    display: flex;
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    top: 60px;
+    bottom: 96px;
+    width: auto;
+    max-height: none;
+    overflow-y: auto;
+  }
+  .menu-btn {
+    display: block;
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.9);
+    color: var(--ink);
+    font-weight: 700;
+    font-size: 13px;
+    border-radius: 999px;
+    padding: 8px 14px;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+    font-family: inherit;
   }
   .timebar input[type='range'] {
     width: 140px;
@@ -839,5 +885,9 @@ body {
   }
   .log {
     display: none;
+  }
+  .panel-left {
+    top: 56px;
+    max-height: calc(100% - 150px);
   }
 }

@@ -91,6 +91,8 @@ export interface Settings {
   wave: number;
   noise: number;
   seed: number;
+  concurrency: number; // 同时说话的神经元数（1~8）
+  autoDistill: boolean; // 跑完自动为最活跃的神经元整理记忆
 }
 
 export const ROUNDS = 80;

@@ -69,7 +69,7 @@ export function SearchPanel() {
         />
       </div>
 
-      <div className="tiny">预算：约 {budgetCalls} 次模型调用（≈ {budgetCalls * 0.8}k tokens 量级）</div>
+      <div className="tiny">预算：约 {budgetCalls} 次模型调用（≈ {budgetCalls * 0.8}k tokens 量级）· 场景并行（并发数同「任务与运行」）</div>
 
       {searchError && <div className="run-error">{searchError}</div>}
 

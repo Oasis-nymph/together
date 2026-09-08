@@ -56,6 +56,12 @@ export function EmergencePanel() {
           <Bar label="新颖性" value={metrics.novelty} />
           <Bar label="发言均匀（分工）" value={metrics.roleEntropy} />
           <Bar label="关系多样性" value={metrics.relationDiversity} />
+          {metrics.judgeConsensus !== undefined && (
+            <Bar label="裁判·结论一致" value={metrics.judgeConsensus} />
+          )}
+          {metrics.taskQuality !== undefined && (
+            <Bar label="裁判·任务完成度" value={metrics.taskQuality} />
+          )}
           <div className="note interpret">{interpret(metrics)}</div>
         </>
       )}

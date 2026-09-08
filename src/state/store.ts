@@ -1,9 +1,11 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { genEdges, genPositions } from '../core/topology';
-import { generateActivity, getRegimeParams } from '../core/activity';
+import { generateActivity, getRegimeParams, getScoreWeights } from '../core/activity';
 import { runSimulation } from '../core/runner';
 import { computeMetrics } from '../core/emergence';
+import { mapLimit } from '../core/scheduler';
+import { judgeRun } from '../core/judge';
 import { chat, checkProxy } from '../core/llm';
 import {
   EVENT_HALF_LIFE,
@@ -37,12 +39,14 @@ const uid = (p: string) => `${p}-${++counter}-${Math.floor(Math.random() * 1e6)}
 
 const DEFAULT_SETTINGS: Settings = {
   topology: 'clusters',
-  count: 14,
+  count: 8,
   density: 0.25,
   regime: 'edge',
   wave: 0.5,
   noise: 0.3,
   seed: 20260721,
+  concurrency: 4,
+  autoDistill: true,
 };
 
 const DEFAULT_API: ApiConfig = {
@@ -79,6 +83,7 @@ interface TogetherState {
   modelProfiles: ModelProfile[];
   task: string;
   runRounds: number;
+  runKeypoints: string[]; // 内置基准任务的关键点（供裁判打分）
   running: boolean;
   runRound: number;
   runMessages: Message[];
@@ -131,6 +136,7 @@ interface TogetherState {
   setNeuronModel: (neuronId: string, modelId: string | null) => void;
   resolveApi: (neuronId: string) => ApiConfig;
   setTask: (t: string) => void;
+  setRunKeypoints: (k: string[]) => void;
   setRunRounds: (n: number) => void;
   startRun: () => void;
   stopRun: () => void;
@@ -179,7 +185,8 @@ export const useStore = create<TogetherState>()(
       api: { ...DEFAULT_API },
       modelProfiles: [],
       task: '讨论：合作是如何在自利个体之间产生的？请最终给出一个共同结论。',
-      runRounds: 6,
+      runRounds: 3,
+      runKeypoints: [],
       running: false,
       runRound: 0,
       runMessages: [],
@@ -373,10 +380,11 @@ export const useStore = create<TogetherState>()(
         };
       },
       setTask: (t) => set({ task: t }),
+      setRunKeypoints: (k) => set({ runKeypoints: k }),
       setRunRounds: (n) => set({ runRounds: n }),
 
       startRun: async () => {
-        const { neurons, edges, api, task, runRounds, modelProfiles } = get();
+        const { neurons, edges, api, task, runRounds, runKeypoints, settings, modelProfiles } = get();
         if (!api.model.trim() && modelProfiles.length === 0) {
           set({ runError: '请先在「模型设置」里配置全局模型，或在模型库中添加模型' });
           return;
@@ -396,6 +404,10 @@ export const useStore = create<TogetherState>()(
         const controller = new AbortController();
         set({ running: true, runError: '', runMessages: [], runRound: 0, runController: controller });
 
+        const regime = getRegimeParams(settings);
+        const weights = getScoreWeights(settings.regime);
+        const nameOf = (id: string) => neurons.find((n) => n.id === id)?.name ?? id;
+
         try {
           await runSimulation({
             neurons,
@@ -405,6 +417,8 @@ export const useStore = create<TogetherState>()(
             rounds: runRounds,
             signal: controller.signal,
             memories: get().memories,
+            concurrency: settings.concurrency,
+            regime,
             onMessage: (m) =>
               set((s) => ({ runMessages: [...s.runMessages, m], runRound: m.round + 1 })),
             onRoundDone: (msgs) => {
@@ -413,7 +427,30 @@ export const useStore = create<TogetherState>()(
           });
           const msgs = get().runMessages;
           if (msgs.length) {
-            const metrics = computeMetrics(msgs, neurons.length);
+            // 裁判模型打分（结论一致性 + 任务完成度）
+            let judge: { consensus?: number; quality?: number } | undefined;
+            const real = msgs.filter((m) => m.real && m.relationType !== '错误' && m.content);
+            const lastRound = Math.max(...msgs.map((m) => m.round));
+            const finals = real.filter((m) => m.round === lastRound);
+            if (finals.length) {
+              try {
+                const j = await judgeRun({
+                  api: get().resolveApi(finals[0].fromId),
+                  task,
+                  keypoints: runKeypoints,
+                  finals: finals.slice(0, 12).map((m) => ({
+                    from: nameOf(m.fromId),
+                    relationType: m.relationType,
+                    content: m.content,
+                  })),
+                  signal: controller.signal,
+                });
+                judge = { consensus: j.consensus, quality: j.quality };
+              } catch {
+                /* 裁判失败不影响主流程 */
+              }
+            }
+            const metrics = computeMetrics(msgs, neurons.length, { weights, judge });
             const rec: RunRecord = {
               id: uid('run'),
               at: Date.now(),
@@ -423,6 +460,16 @@ export const useStore = create<TogetherState>()(
               metrics,
             };
             set((s) => ({ runs: [rec, ...s.runs].slice(0, 5), selectedRunId: rec.id }));
+            // 跑完自动整理记忆（为最活跃的神经元生成推论记忆）
+            if (settings.autoDistill) {
+              const counts = new Map<string, number>();
+              for (const m of real) counts.set(m.fromId, (counts.get(m.fromId) ?? 0) + 1);
+              const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
+              for (const [id] of top) {
+                if (controller.signal.aborted) break;
+                await get().distillMemory(id);
+              }
+            }
           }
         } catch (e) {
           set({ runError: e instanceof Error ? e.message : String(e) });
@@ -582,7 +629,7 @@ export const useStore = create<TogetherState>()(
       },
 
       startSearch: async (opts) => {
-        const { api } = get();
+        const { api, settings } = get();
         if (!api.model.trim()) {
           set({ searchError: '请先在「模型设置」里填写模型名' });
           return;
@@ -609,10 +656,12 @@ export const useStore = create<TogetherState>()(
         });
         try {
           const results: ScenarioResult[] = [];
-          for (let i = 0; i < variants.length; i++) {
-            if (controller.signal.aborted) break;
-            set((s) => ({ searchProgress: { current: i, total: variants.length } }));
-            const v = variants[i];
+          let done = 0;
+          // 场景并行池（并发数 = 设置里的 concurrency，可自定义）
+          await mapLimit(variants, Math.max(1, settings.concurrency), async (v) => {
+            if (controller.signal.aborted) return;
+            const regime = getRegimeParams({ ...settings, regime: v.regime });
+            const weights = getScoreWeights(v.regime);
             const messages = await runSimulation({
               neurons: v.neurons,
               edges: v.edges,
@@ -621,16 +670,21 @@ export const useStore = create<TogetherState>()(
               rounds: opts.rounds,
               signal: controller.signal,
               memories: [],
+              concurrency: settings.concurrency,
+              regime,
               onMessage: () => {},
             });
-            const metrics = computeMetrics(messages, v.neurons.length);
+            if (controller.signal.aborted) return;
+            const metrics = computeMetrics(messages, v.neurons.length, { weights });
             const real = messages.filter((m) => m.real && m.relationType !== '错误' && m.content);
             const summary = real.length ? real[real.length - 1].content.slice(0, 90) : '（无有效输出）';
             results.push({ variant: v, metrics, messages, summary });
+            done++;
             set((s) => ({
+              searchProgress: { current: done, total: variants.length },
               searchResults: [...results].sort((a, b) => b.metrics.score - a.metrics.score),
             }));
-          }
+          });
         } catch (e) {
           set({ searchError: e instanceof Error ? e.message : String(e) });
         } finally {
@@ -864,9 +918,17 @@ export const useStore = create<TogetherState>()(
         modelProfiles: s.modelProfiles,
         task: s.task,
         runRounds: s.runRounds,
+        runKeypoints: s.runKeypoints,
         memories: s.memories,
         groups: s.groups,
+        settings: s.settings,
+        neurons: s.neurons,
+        edges: s.edges,
       }),
+      onRehydrateStorage: () => (state) => {
+        // 刷新后恢复画布：重建放电波与模拟信号
+        if (state?.neurons?.length) state.recomputeActivity?.();
+      },
     }
   )
 );

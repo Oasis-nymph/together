@@ -150,7 +150,7 @@
   - 神经元 6：*"工程化瓶颈在于 LLM 输出与确定性执行之间的接口契约，必须用 STD 协议（Schema、Test、Data）显式约束。"*
   - 神经元 14：*"自主数据科学系统的核心矛盾不在模型能力，而在'统计严谨性'与'自主性'的冲突——系统越自主，越需要内置因果验证与反模式记忆来防止'自信地犯错'。"*
 
-> 完整数据：`together - 副本/experiment-memory-report.json`（逐条记忆）与 `experiment-report.json`（五状态全部对话）。
+> 完整数据：`experiments/experiment-memory-report.json`（逐条记忆）与 `experiments/experiment-report.json`（五状态全部对话）。
 
 ## 附：复现
 
@@ -159,4 +159,4 @@ cd together
 npm install
 npm run dev        # 打开 http://localhost:5173，右侧配置模型后 ▶ 开始对话
 ```
-五状态对照实验（无头）：见 `together - 副本/experiment-driver.mjs` 与 `experiment-report.json`。
+五状态对照实验（无头）：见 `experiments/` 目录（脚本与数据，Key 从环境变量读取）。

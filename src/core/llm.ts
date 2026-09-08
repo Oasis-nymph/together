@@ -26,25 +26,36 @@ export interface ChatOptions {
   signal?: AbortSignal;
 }
 
-/** 经本地代理调用模型（代理负责转发 OpenAI 兼容 / Ollama） */
+/** 经本地代理调用模型（代理负责转发 OpenAI 兼容 / Ollama）。失败自动重试（指数退避，最多 3 次）。 */
 export async function chat(opts: ChatOptions): Promise<string> {
-  const res = await fetch(API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(opts),
-    signal: opts.signal,
-  });
-  let data: { content?: string; error?: string } | null = null;
-  try {
-    data = await res.json();
-  } catch {
-    /* ignore parse error */
+  let lastErr: unknown = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    if (opts.signal?.aborted) throw new Error('已中止');
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(opts),
+        signal: opts.signal,
+      });
+      let data: { content?: string; error?: string } | null = null;
+      try {
+        data = await res.json();
+      } catch {
+        /* ignore parse error */
+      }
+      if (!res.ok || !data || data.error) {
+        throw new Error(data?.error ?? `HTTP ${res.status}`);
+      }
+      if (typeof data.content !== 'string' || !data.content) {
+        throw new Error('模型返回为空');
+      }
+      return data.content;
+    } catch (e) {
+      lastErr = e;
+      if (opts.signal?.aborted) throw lastErr; // 用户主动中止：不重试
+      if (attempt < 3) await new Promise((r) => setTimeout(r, 600 * attempt));
+    }
   }
-  if (!res.ok || !data || data.error) {
-    throw new Error(data?.error ?? `HTTP ${res.status}`);
-  }
-  if (typeof data.content !== 'string' || !data.content) {
-    throw new Error('模型返回为空');
-  }
-  return data.content;
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
 }
