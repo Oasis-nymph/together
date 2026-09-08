@@ -24,6 +24,7 @@ export function Neuron({ neuron }: { neuron: NeuronData }) {
   const connectFrom = useStore((s) => s.connectFromId === neuron.id);
   const active = useStore((s) => s.activeNodesByRound[s.round]?.includes(neuron.id));
   const connectMode = useStore((s) => s.connectMode);
+  const groupInfo = useStore((s) => s.groups.find((g) => g.memberIds.includes(neuron.id)));
 
   haloBaseRef.current = 0.14 + (selected ? 0.3 : 0) + (connectFrom ? 0.2 : 0);
 
@@ -116,6 +117,18 @@ export function Neuron({ neuron }: { neuron: NeuronData }) {
         <sphereGeometry args={[neuron.radius * 0.5, 32, 32]} />
         <meshBasicMaterial ref={coreMat} color="#bbf7d0" transparent opacity={0.35} />
       </mesh>
+      {groupInfo && (
+        <sprite scale={[neuron.radius * 3.4, neuron.radius * 3.4, 1]}>
+          <spriteMaterial
+            map={glowTex}
+            color={groupInfo.color}
+            transparent
+            opacity={0.4}
+            blending={THREE.AdditiveBlending}
+            depthWrite={false}
+          />
+        </sprite>
+      )}
       <sprite ref={halo} scale={[neuron.radius * 6, neuron.radius * 6, 1]}>
         <spriteMaterial
           ref={haloMat}

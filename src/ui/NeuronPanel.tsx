@@ -10,11 +10,16 @@ export function NeuronPanel() {
   const distilling = useStore((s) => s.distilling);
   const distillMemory = useStore((s) => s.distillMemory);
   const removeMemory = useStore((s) => s.removeMemory);
+  const promoteMemory = useStore((s) => s.promoteMemory);
+  const groups = useStore((s) => s.groups);
+  const setMembership = useStore((s) => s.setMembership);
 
   if (!neuron) return null;
 
   const readable = readableMemories(memories, neuron.id).slice(0, 20);
   const total = readableMemories(memories, neuron.id).length;
+  const myGroup = groups.find((g) => g.memberIds.includes(neuron.id));
+  const levelLabel = (lv: string) => (lv === 'shared' ? '共同' : lv === 'group' ? '群组' : '个人');
 
   return (
     <div className="panel panel-left">
@@ -53,6 +58,21 @@ export function NeuronPanel() {
         />
       </div>
 
+      <div className="field">
+        <label>所属群组</label>
+        <select
+          value={myGroup?.id ?? ''}
+          onChange={(e) => setMembership(neuron.id, e.target.value || null)}
+        >
+          <option value="">（无）</option>
+          {groups.map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
       <div className="mem-section">
         <div className="mem-head">
           <span className="mem-title">🧠 记忆（{total} 条可读）</span>
@@ -72,9 +92,14 @@ export function NeuronPanel() {
         {readable.map((m) => (
           <div key={m.id} className="mem">
             <div className="mem-meta">
-              <span className={`badge ${m.level}`}>{m.level === 'shared' ? '共同' : '个人'}</span>
+              <span className={`badge ${m.level}`}>{levelLabel(m.level)}</span>
               <span className={`badge ${m.type}`}>{m.type === 'inference' ? '推论' : '事件'}</span>
               <span className="mem-strength">强度 {decayedStrength(m).toFixed(2)}</span>
+              {m.level === 'personal' && m.ownerId === neuron.id && myGroup && (
+                <span className="mini promote" onClick={() => promoteMemory(m.id, myGroup.id)} title="固化上升：提升为群组记忆">
+                  ↑群组
+                </span>
+              )}
               <span className="mem-x" onClick={() => removeMemory(m.id)}>
                 ✕
               </span>
@@ -83,7 +108,7 @@ export function NeuronPanel() {
           </div>
         ))}
         <div className="note">
-          归属范围：个人记忆仅自己可读；共同记忆双方可读。事件由平台自动记录；推论由模型生成；记忆随时间衰减。
+          归属范围：个人记忆仅自己可读；共同记忆双方可读；群组记忆全体成员（含子组）可读。事件由平台自动记录；推论由模型生成；记忆随时间衰减。
         </div>
       </div>
 

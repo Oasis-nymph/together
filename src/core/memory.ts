@@ -1,11 +1,12 @@
 /**
  * 多层级发散记忆库（核心模型）
- * - 归属范围读写：A 的个人记忆只有 A 能读；A+B 的共同记忆 A、B 都能读（未来扩展：群组/全局）。
+ * - 归属范围读写：A 的个人记忆只有 A 能读；A+B 的共同记忆 A、B 都能读；群组记忆由全体成员（含子组）可读。
  * - 类型：事件记忆（平台自动记录）、推论记忆（由该单位的模型生成）。
  * - 衰减：每条记忆带半衰期，不强化就随时间淡出。
  */
+import type { Group } from './types';
 
-export type MemoryLevel = 'personal' | 'shared'; // 未来: 'group' | 'global'
+export type MemoryLevel = 'personal' | 'shared' | 'group';
 export type MemoryType = 'event' | 'inference';
 
 export interface Memory {
@@ -32,14 +33,31 @@ export function readableMemories(memories: Memory[], neuronId: string, now: numb
     .sort((a, b) => decayedStrength(b, now) - decayedStrength(a, now));
 }
 
+/** 群组记忆的可读范围：全体成员 + 所有后代子组成员（防环） */
+export function groupScope(groups: Group[], groupId: string): string[] {
+  const acc = new Set<string>();
+  const visited = new Set<string>();
+  const collect = (id: string) => {
+    if (visited.has(id)) return;
+    visited.add(id);
+    const g = groups.find((x) => x.id === id);
+    if (!g) return;
+    g.memberIds.forEach((m) => acc.add(m));
+    groups.filter((x) => x.parentId === id).forEach((x) => collect(x.id));
+  };
+  collect(groupId);
+  return [...acc];
+}
+
 /** 生成给模型的记忆上下文（只有该神经元有权读到的部分） */
 export function buildMemoryContext(memories: Memory[], neuronId: string, limit = 6, now = Date.now()): string {
   const list = readableMemories(memories, neuronId, now).slice(0, limit);
   if (!list.length) return '';
+  const label = (m: Memory) => (m.level === 'shared' ? '共同' : m.level === 'group' ? '群组' : '个人');
   return list
     .map(
       (m) =>
-        `- [${m.level === 'shared' ? '共同' : '个人'}记忆｜${m.type === 'inference' ? '推论' : '事件'}｜强度${decayedStrength(m, now).toFixed(2)}] ${m.content}`
+        `- [${label(m)}记忆｜${m.type === 'inference' ? '推论' : '事件'}｜强度${decayedStrength(m, now).toFixed(2)}] ${m.content}`
     )
     .join('\n');
 }

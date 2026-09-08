@@ -8,6 +8,7 @@ import { chat, checkProxy } from '../core/llm';
 import {
   EVENT_HALF_LIFE,
   INFERENCE_HALF_LIFE,
+  groupScope,
   pruneMemories,
   readableMemories,
   type Memory,
@@ -19,12 +20,15 @@ import { OPENAI_DEFAULT_URL, ROUNDS } from '../core/types';
 import type {
   ApiConfig,
   Edge,
+  Group,
   Message,
   Neuron,
   RunRecord,
   Settings,
   Vec3,
 } from '../core/types';
+
+const GROUP_COLORS = ['#4d8dff', '#8b5cf6', '#f59e0b', '#14b8a6', '#f43f5e', '#a3e635'];
 
 let counter = 0;
 const uid = (p: string) => `${p}-${++counter}-${Math.floor(Math.random() * 1e6)}`;
@@ -82,6 +86,9 @@ interface TogetherState {
   memories: Memory[];
   distilling: string | null;
 
+  // 嵌套群组
+  groups: Group[];
+
   // 运行历史与涌现观察
   runs: RunRecord[];
   selectedRunId: string | null;
@@ -127,6 +134,13 @@ interface TogetherState {
   stopSearch: () => void;
   loadScenarioResult: (r: ScenarioResult) => void;
   viewScenarioResult: (r: ScenarioResult) => void;
+
+  addGroup: (name: string, parentId: string | null) => string;
+  renameGroup: (id: string, name: string) => void;
+  setGroupParent: (id: string, parentId: string | null) => void;
+  removeGroup: (id: string) => void;
+  setMembership: (neuronId: string, groupId: string | null) => void;
+  promoteMemory: (memoryId: string, groupId: string) => void;
 }
 
 export const useStore = create<TogetherState>()(
@@ -157,6 +171,8 @@ export const useStore = create<TogetherState>()(
 
       memories: [],
       distilling: null,
+
+      groups: [],
 
       runs: [],
       selectedRunId: null,
@@ -605,10 +621,61 @@ export const useStore = create<TogetherState>()(
         };
         set((s) => ({ runs: [rec, ...s.runs].slice(0, 5), selectedRunId: rec.id }));
       },
+
+      addGroup: (name, parentId) => {
+        const g: Group = {
+          id: uid('g'),
+          name: name.trim() || `群组 ${get().groups.length + 1}`,
+          parentId,
+          memberIds: [],
+          color: GROUP_COLORS[get().groups.length % GROUP_COLORS.length],
+        };
+        set((s) => ({ groups: [...s.groups, g] }));
+        return g.id;
+      },
+      renameGroup: (id, name) =>
+        set((s) => ({ groups: s.groups.map((g) => (g.id === id ? { ...g, name } : g)) })),
+      setGroupParent: (id, parentId) =>
+        set((s) => ({
+          groups: s.groups.map((g) => (g.id === id ? { ...g, parentId: parentId ?? null } : g)),
+        })),
+      removeGroup: (id) =>
+        set((s) => ({ groups: s.groups.filter((g) => g.id !== id && g.parentId !== id) })),
+      setMembership: (neuronId, groupId) =>
+        set((s) => ({
+          groups: s.groups.map((g) => ({
+            ...g,
+            memberIds:
+              g.id === groupId
+                ? g.memberIds.includes(neuronId)
+                  ? g.memberIds
+                  : [...g.memberIds, neuronId]
+                : g.memberIds.filter((m) => m !== neuronId),
+          })),
+        })),
+      promoteMemory: (memoryId, groupId) =>
+        set((s) => ({
+          memories: s.memories.map((m) =>
+            m.id === memoryId
+              ? {
+                  ...m,
+                  level: 'group' as const,
+                  scope: groupScope(s.groups, groupId),
+                  ownerId: `group:${groupId}`,
+                }
+              : m
+          ),
+        })),
     }),
     {
       name: 'together-v1',
-      partialize: (s) => ({ api: s.api, task: s.task, runRounds: s.runRounds, memories: s.memories }),
+      partialize: (s) => ({
+        api: s.api,
+        task: s.task,
+        runRounds: s.runRounds,
+        memories: s.memories,
+        groups: s.groups,
+      }),
     }
   )
 );

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useStore } from '../state/store';
 import { REGIME_OPTIONS, TOPOLOGY_OPTIONS } from '../core/types';
 import { SCENARIO_TEMPLATES } from '../core/scenarios';
@@ -11,6 +12,14 @@ export function ControlPanel() {
   const addNeuron = useStore((s) => s.addNeuron);
   const setConnectMode = useStore((s) => s.setConnectMode);
   const loadTemplate = useStore((s) => s.loadTemplate);
+  const groups = useStore((s) => s.groups);
+  const addGroup = useStore((s) => s.addGroup);
+  const renameGroup = useStore((s) => s.renameGroup);
+  const setGroupParent = useStore((s) => s.setGroupParent);
+  const removeGroup = useStore((s) => s.removeGroup);
+
+  const [newGroupName, setNewGroupName] = useState('');
+  const [newGroupParent, setNewGroupParent] = useState('');
 
   const rebuildOnRelease = () => rebuild();
 
@@ -145,6 +154,71 @@ export function ControlPanel() {
             </option>
           ))}
         </select>
+      </div>
+
+      <div className="field">
+        <div className="lbl">
+          <span>群组（可嵌套）</span>
+        </div>
+        <div className="group-list">
+          {groups.length === 0 && <div className="tiny">还没有群组。群组记忆由全体成员可读。</div>}
+          {groups.map((g) => (
+            <div key={g.id} className="group-row">
+              <span className="group-dot" style={{ background: g.color }} />
+              <input
+                className="group-name"
+                value={g.name}
+                onChange={(e) => renameGroup(g.id, e.target.value)}
+              />
+              <select
+                className="group-parent"
+                value={g.parentId ?? ''}
+                onChange={(e) => setGroupParent(g.id, e.target.value || null)}
+                title="父组（嵌套）"
+              >
+                <option value="">顶级</option>
+                {groups
+                  .filter((x) => x.id !== g.id)
+                  .map((x) => (
+                    <option key={x.id} value={x.id}>
+                      {x.name}
+                    </option>
+                  ))}
+              </select>
+              <span className="group-count" title="成员数">
+                {g.memberIds.length}
+              </span>
+              <span className="mem-x" onClick={() => removeGroup(g.id)}>
+                ✕
+              </span>
+            </div>
+          ))}
+        </div>
+        <div className="group-add">
+          <input
+            placeholder="新群组名"
+            value={newGroupName}
+            onChange={(e) => setNewGroupName(e.target.value)}
+          />
+          <select value={newGroupParent} onChange={(e) => setNewGroupParent(e.target.value)}>
+            <option value="">顶级</option>
+            {groups.map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.name}
+              </option>
+            ))}
+          </select>
+          <button
+            className="mini"
+            onClick={() => {
+              addGroup(newGroupName, newGroupParent || null);
+              setNewGroupName('');
+            }}
+          >
+            ＋
+          </button>
+        </div>
+        <div className="tiny">在神经元面板里把成员加入群组；个人记忆可「提升」为群组记忆。</div>
       </div>
 
       <button

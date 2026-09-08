@@ -520,6 +520,90 @@ body {
   background: #f1f5f9;
   color: #475569;
 }
+.badge.group {
+  background: #ecfdf5;
+  color: #047857;
+}
+.promote {
+  font-size: 10.5px;
+  padding: 1px 7px;
+  cursor: pointer;
+}
+.promote:hover {
+  background: #d1fae5;
+}
+
+/* ---------- 群组 ---------- */
+.group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.group-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.group-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+}
+.group-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font-family: inherit;
+  box-sizing: border-box;
+}
+.group-parent {
+  font-size: 11px;
+  padding: 5px 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+  max-width: 76px;
+}
+.group-count {
+  font-size: 11px;
+  color: var(--faint);
+  min-width: 14px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.group-add {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.group-add input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font-family: inherit;
+  box-sizing: border-box;
+}
+.group-add select {
+  font-size: 11px;
+  padding: 6px 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+  max-width: 76px;
+}
 .mem-strength {
   font-size: 10.5px;
   color: var(--faint);

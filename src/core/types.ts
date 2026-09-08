@@ -63,6 +63,15 @@ export interface RunRecord {
 export const OPENAI_DEFAULT_URL = 'https://api.openai.com/v1';
 export const OLLAMA_DEFAULT_URL = 'http://localhost:11434';
 
+/** 群组 = 分形层级（holon）：可嵌套，群组记忆由全体成员（含子组）可读 */
+export interface Group {
+  id: string;
+  name: string;
+  parentId: string | null;
+  memberIds: string[];
+  color: string;
+}
+
 export interface Settings {
   topology: string;
   count: number;
