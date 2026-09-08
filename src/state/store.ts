@@ -16,6 +16,7 @@ import {
 import { makeRng } from '../core/random';
 import { SCENARIO_TEMPLATES } from '../core/scenarios';
 import { generateVariants, type ScenarioResult } from '../core/search';
+import { makeProjectFile, parseProjectFile } from '../core/io';
 import { OPENAI_DEFAULT_URL, ROUNDS } from '../core/types';
 import type {
   ApiConfig,
@@ -89,6 +90,9 @@ interface TogetherState {
   // 嵌套群组
   groups: Group[];
 
+  // 新人进入体验
+  onboardingId: string | null;
+
   // 运行历史与涌现观察
   runs: RunRecord[];
   selectedRunId: string | null;
@@ -141,6 +145,11 @@ interface TogetherState {
   removeGroup: (id: string) => void;
   setMembership: (neuronId: string, groupId: string | null) => void;
   promoteMemory: (memoryId: string, groupId: string) => void;
+
+  onboardNeuron: (neuronId: string) => Promise<void>;
+  duplicateNeuron: (id: string) => string | null;
+  exportProject: () => void;
+  importProject: (data: unknown) => boolean;
 }
 
 export const useStore = create<TogetherState>()(
@@ -173,6 +182,8 @@ export const useStore = create<TogetherState>()(
       distilling: null,
 
       groups: [],
+
+      onboardingId: null,
 
       runs: [],
       selectedRunId: null,
@@ -260,6 +271,7 @@ export const useStore = create<TogetherState>()(
         };
         set((s) => ({ neurons: [...s.neurons, neuron], selectedNeuronId: id, selectedEdgeId: null }));
         get().recomputeActivity();
+        void get().onboardNeuron(id); // 新人进入体验：认识环境、自我介绍、记录印象
         return id;
       },
 
@@ -666,6 +678,129 @@ export const useStore = create<TogetherState>()(
               : m
           ),
         })),
+
+      onboardNeuron: async (neuronId) => {
+        const { neurons, api, task, memories } = get();
+        const n = neurons.find((x) => x.id === neuronId);
+        if (!n || !api.model.trim()) return;
+        const proxyOk = await checkProxy();
+        if (!proxyOk) return; // 无代理时静默跳过（可视化仍可用）
+        set({ onboardingId: neuronId });
+        try {
+          const others = neurons.filter((x) => x.id !== neuronId);
+          const intro = others
+            .map((x) => `- ${x.name}${x.role ? `（${x.role}）` : '（成员）'}`)
+            .join('\n');
+          const system =
+            (n.systemPrompt.trim() ? n.systemPrompt : `你是「${n.name}」${n.role ? '，身份：' + n.role : ''}。`) +
+            '\n\n【平台规则】你刚进入一个新环境，像人进入新环境一样：先自我介绍，再写下你对这个环境的初始印象。' +
+            '第一行自我介绍，之后每行一条印象，共不超过 4 行。';
+          const user = `总任务：${task}\n\n环境里已有的成员：\n${intro || '（空环境）'}\n\n请自我介绍并记录初始印象。`;
+          const content = await chat({
+            provider: api.provider,
+            baseURL: api.baseURL,
+            apiKey: api.apiKey,
+            model: api.model,
+            temperature: 0.7,
+            messages: [
+              { role: 'system', content: system },
+              { role: 'user', content: user },
+            ],
+          });
+          const lines = content
+            .split('\n')
+            .map((l) => l.trim())
+            .filter(Boolean)
+            .slice(0, 4);
+          const now = Date.now();
+          const news: Memory[] = [
+            {
+              id: uid('mem'),
+              ownerId: neuronId,
+              level: 'personal',
+              scope: [neuronId],
+              type: 'event',
+              content: `刚进入环境，认识了 ${others.length} 个成员。`,
+              createdAt: now,
+              strength: 1,
+              halfLifeMs: EVENT_HALF_LIFE,
+            },
+            {
+              id: uid('mem'),
+              ownerId: neuronId,
+              level: 'personal',
+              scope: [neuronId],
+              type: 'inference',
+              content: lines.length ? lines.join('；') : '对环境的初始印象：有待观察。',
+              createdAt: now,
+              strength: 1,
+              halfLifeMs: INFERENCE_HALF_LIFE,
+            },
+          ];
+          set((s) => ({ memories: pruneMemories([...s.memories, ...news]) }));
+        } catch {
+          /* 静默：失败不影响画布 */
+        } finally {
+          set({ onboardingId: null });
+        }
+      },
+
+      duplicateNeuron: (id) => {
+        const { neurons, groups } = get();
+        const src = neurons.find((n) => n.id === id);
+        if (!src) return null;
+        const newId = uid('n');
+        const copy: Neuron = {
+          ...src,
+          id: newId,
+          name: `${src.name} 副本`,
+          pos: [src.pos[0] + 0.7, src.pos[1] + 0.5, src.pos[2]] as Vec3,
+        };
+        set((s) => ({
+          neurons: [...s.neurons, copy],
+          groups: s.groups.map((g) =>
+            g.memberIds.includes(id) ? { ...g, memberIds: [...g.memberIds, newId] } : g
+          ),
+          selectedNeuronId: newId,
+          selectedEdgeId: null,
+        }));
+        get().recomputeActivity();
+        void get().onboardNeuron(newId);
+        return newId;
+      },
+
+      exportProject: () => {
+        const { task, runRounds, settings, neurons, edges, groups, memories } = get();
+        const file = makeProjectFile({ task, runRounds, settings, neurons, edges, groups, memories });
+        const blob = new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `together-${new Date().toISOString().slice(0, 10)}.json`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      },
+
+      importProject: (data) => {
+        const f = parseProjectFile(data);
+        if (!f) {
+          set({ runError: '导入失败：文件格式不正确（需要 together v1 项目文件）' });
+          return false;
+        }
+        set({
+          task: f.task,
+          runRounds: f.runRounds,
+          settings: { ...get().settings, ...f.settings },
+          neurons: f.neurons,
+          edges: f.edges,
+          groups: f.groups,
+          memories: f.memories,
+          selectedNeuronId: null,
+          selectedEdgeId: null,
+          round: 0,
+        });
+        get().recomputeActivity();
+        return true;
+      },
     }),
     {
       name: 'together-v1',

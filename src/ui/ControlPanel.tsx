@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useStore } from '../state/store';
 import { REGIME_OPTIONS, TOPOLOGY_OPTIONS } from '../core/types';
 import { SCENARIO_TEMPLATES } from '../core/scenarios';
@@ -17,6 +17,10 @@ export function ControlPanel() {
   const renameGroup = useStore((s) => s.renameGroup);
   const setGroupParent = useStore((s) => s.setGroupParent);
   const removeGroup = useStore((s) => s.removeGroup);
+  const exportProject = useStore((s) => s.exportProject);
+  const importProject = useStore((s) => s.importProject);
+
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const [newGroupName, setNewGroupName] = useState('');
   const [newGroupParent, setNewGroupParent] = useState('');
@@ -248,6 +252,28 @@ export function ControlPanel() {
       >
         随机重新生成
       </button>
+      <button className="btn ghost" onClick={exportProject}>
+        ⬇ 导出项目（JSON）
+      </button>
+      <button className="btn ghost" onClick={() => fileRef.current?.click()}>
+        ⬆ 导入项目
+      </button>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="application/json,.json"
+        style={{ display: 'none' }}
+        onChange={async (e) => {
+          const f = e.target.files?.[0];
+          if (!f) return;
+          try {
+            importProject(JSON.parse(await f.text()));
+          } catch {
+            useStore.setState({ runError: '导入失败：不是合法 JSON 文件' });
+          }
+          e.target.value = '';
+        }}
+      />
     </div>
   );
 }

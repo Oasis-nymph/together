@@ -238,6 +238,10 @@ body {
 .btn.danger:hover {
   background: #fff1f2;
 }
+.btn-row {
+  display: flex;
+  gap: 8px;
+}
 
 .note {
   background: #f8fafc;

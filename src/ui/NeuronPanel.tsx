@@ -13,6 +13,8 @@ export function NeuronPanel() {
   const promoteMemory = useStore((s) => s.promoteMemory);
   const groups = useStore((s) => s.groups);
   const setMembership = useStore((s) => s.setMembership);
+  const onboardingId = useStore((s) => s.onboardingId);
+  const duplicateNeuron = useStore((s) => s.duplicateNeuron);
 
   if (!neuron) return null;
 
@@ -73,6 +75,10 @@ export function NeuronPanel() {
         </select>
       </div>
 
+      {onboardingId === neuron.id && (
+        <div className="note">🌱 新人进入体验：正在认识环境、自我介绍、记录印象…</div>
+      )}
+
       <div className="mem-section">
         <div className="mem-head">
           <span className="mem-title">🧠 记忆（{total} 条可读）</span>
@@ -112,9 +118,14 @@ export function NeuronPanel() {
         </div>
       </div>
 
-      <button className="btn danger" onClick={() => removeNeuron(neuron.id)}>
-        删除神经元
-      </button>
+      <div className="btn-row">
+        <button className="btn ghost" onClick={() => duplicateNeuron(neuron.id)}>
+          复制神经元
+        </button>
+        <button className="btn danger" onClick={() => removeNeuron(neuron.id)}>
+          删除神经元
+        </button>
+      </div>
     </div>
   );
 }
