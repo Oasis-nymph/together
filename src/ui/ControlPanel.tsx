@@ -13,7 +13,7 @@ export function ControlPanel() {
   const rebuildOnRelease = () => rebuild();
 
   return (
-    <div className="panel panel-right">
+    <div className="panel">
       <h3>系统 · 预设 / 自定义</h3>
 
       <div className="field">

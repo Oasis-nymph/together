@@ -29,8 +29,27 @@ export interface Message {
   fromId: string;
   toId: string;
   relationType: string;
+  weight?: number;
+  content: string;
+  real?: boolean; // true = 真实模型输出；缺省 = 模拟信号
+}
+
+/** LLM 接入配置（存本地浏览器，经本地代理转发） */
+export interface ApiConfig {
+  provider: 'openai' | 'ollama';
+  baseURL: string;
+  apiKey: string;
+  model: string;
+  temperature: number;
+}
+
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant';
   content: string;
 }
+
+export const OPENAI_DEFAULT_URL = 'https://api.openai.com/v1';
+export const OLLAMA_DEFAULT_URL = 'http://localhost:11434';
 
 export interface Settings {
   topology: string;

@@ -1,5 +1,7 @@
 import { Scene } from './three/Scene';
 import { ControlPanel } from './ui/ControlPanel';
+import { RunPanel } from './ui/RunPanel';
+import { ApiPanel } from './ui/ApiPanel';
 import { NeuronPanel } from './ui/NeuronPanel';
 import { EdgePanel } from './ui/EdgePanel';
 import { TimeBar } from './ui/TimeBar';
@@ -33,7 +35,11 @@ export default function App() {
             : '拖拽神经元移动 · 点击选中 · 滚轮缩放 · 右键平移'}
         </div>
 
-        <ControlPanel />
+        <div className="col-right">
+          <ControlPanel />
+          <RunPanel />
+          <ApiPanel />
+        </div>
         {selectedNeuronId && <NeuronPanel />}
         {selectedEdgeId && <EdgePanel />}
         <TimeBar />
