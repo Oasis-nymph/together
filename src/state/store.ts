@@ -3,6 +3,14 @@ import { persist } from 'zustand/middleware';
 import { genEdges, genPositions } from '../core/topology';
 import { generateActivity, getRegimeParams } from '../core/activity';
 import { speakAll, type InboxItem } from '../core/scheduler';
+import { chat, checkProxy } from '../core/llm';
+import {
+  EVENT_HALF_LIFE,
+  INFERENCE_HALF_LIFE,
+  pruneMemories,
+  readableMemories,
+  type Memory,
+} from '../core/memory';
 import { makeRng } from '../core/random';
 import { OPENAI_DEFAULT_URL, ROUNDS } from '../core/types';
 import type { ApiConfig, Edge, Message, Neuron, Settings, Vec3 } from '../core/types';
@@ -59,6 +67,10 @@ interface TogetherState {
   runError: string;
   runController: AbortController | null;
 
+  // 多层级发散记忆库
+  memories: Memory[];
+  distilling: string | null;
+
   setSettings: (patch: Partial<Settings>) => void;
   rebuild: () => void;
   recomputeActivity: () => void;
@@ -82,6 +94,10 @@ interface TogetherState {
   setRunRounds: (n: number) => void;
   startRun: () => void;
   stopRun: () => void;
+  addEventMemories: (msgs: Message[]) => void;
+  distillMemory: (neuronId: string) => Promise<void>;
+  removeMemory: (id: string) => void;
+  clearMemories: () => void;
 }
 
 export const useStore = create<TogetherState>()(
@@ -109,6 +125,9 @@ export const useStore = create<TogetherState>()(
       runMessages: [],
       runError: '',
       runController: null,
+
+      memories: [],
+      distilling: null,
 
       setSettings: (patch) => set((s) => ({ settings: { ...s.settings, ...patch } })),
 
@@ -250,7 +269,7 @@ export const useStore = create<TogetherState>()(
       setTask: (t) => set({ task: t }),
       setRunRounds: (n) => set({ runRounds: n }),
 
-      startRun: () => {
+      startRun: async () => {
         const { neurons, edges, api, task, runRounds } = get();
         if (!api.model.trim()) {
           set({ runError: '请先在「模型设置」里填写模型名' });
@@ -260,65 +279,181 @@ export const useStore = create<TogetherState>()(
           set({ runError: '请先在「模型设置」里填写 API Key（Ollama 不需要）' });
           return;
         }
+        const proxyOk = await checkProxy();
+        if (!proxyOk) {
+          set({
+            runError:
+              '连不上本地代理(:8787)。请本地运行 npm run dev；GitHub Pages 静态版只支持可视化演示，不支持真实对话。',
+          });
+          return;
+        }
         const controller = new AbortController();
         set({ running: true, runError: '', runMessages: [], runRound: 0, runController: controller });
 
         const nameOf = (id: string) => neurons.find((n) => n.id === id)?.name ?? id;
 
-        (async () => {
+        try {
           let pending: Message[] = [];
-          try {
-            for (let r = 0; r < runRounds; r++) {
-              if (controller.signal.aborted) break;
-              const { neurons: ns, edges: es } = get();
-              const inbox = new Map<string, InboxItem[]>();
-              const add = (id: string, item: InboxItem) => {
-                if (!inbox.has(id)) inbox.set(id, []);
-                inbox.get(id)!.push(item);
-              };
-              if (r === 0) {
-                for (const n of ns) {
-                  add(n.id, {
-                    fromId: 'user',
-                    fromName: '总任务',
-                    relationType: '任务',
-                    weight: 1,
-                    content: task,
-                  });
-                }
-              } else {
-                for (const m of pending) {
-                  add(m.toId, {
-                    fromId: m.fromId,
-                    fromName: nameOf(m.fromId),
-                    relationType: m.relationType,
-                    weight: m.weight ?? 1,
-                    content: m.content,
-                  });
-                }
+          for (let r = 0; r < runRounds; r++) {
+            if (controller.signal.aborted) break;
+            const { neurons: ns, edges: es, memories } = get();
+            const inbox = new Map<string, InboxItem[]>();
+            const add = (id: string, item: InboxItem) => {
+              if (!inbox.has(id)) inbox.set(id, []);
+              inbox.get(id)!.push(item);
+            };
+            if (r === 0) {
+              for (const n of ns) {
+                add(n.id, {
+                  fromId: 'user',
+                  fromName: '总任务',
+                  relationType: '任务',
+                  weight: 1,
+                  content: task,
+                });
               }
-              set({ runRound: r + 1 });
-              pending = await speakAll(ns, es, inbox, task, api, r, controller.signal, (m) =>
-                set((s) => ({ runMessages: [...s.runMessages, m] }))
-              );
-              if (!pending.length) break; // 全体沉默，提前结束
+            } else {
+              for (const m of pending) {
+                add(m.toId, {
+                  fromId: m.fromId,
+                  fromName: nameOf(m.fromId),
+                  relationType: m.relationType,
+                  weight: m.weight ?? 1,
+                  content: m.content,
+                });
+              }
             }
-          } catch (e) {
-            set({ runError: e instanceof Error ? e.message : String(e) });
-          } finally {
-            set({ running: false });
+            set({ runRound: r + 1 });
+            pending = await speakAll(
+              ns,
+              es,
+              inbox,
+              task,
+              api,
+              r,
+              controller.signal,
+              (m) => set((s) => ({ runMessages: [...s.runMessages, m] })),
+              memories
+            );
+            if (pending.length) get().addEventMemories(pending); // 事件自动写入记忆库
+            if (!pending.length) break; // 全体沉默，提前结束
           }
-        })();
+        } catch (e) {
+          set({ runError: e instanceof Error ? e.message : String(e) });
+        } finally {
+          set({ running: false });
+        }
       },
 
       stopRun: () => {
         get().runController?.abort();
         set({ running: false });
       },
+
+      addEventMemories: (msgs) => {
+        if (!msgs.length) return;
+        const { neurons, memories } = get();
+        const nameOf = (id: string) => neurons.find((n) => n.id === id)?.name ?? id;
+        const now = Date.now();
+        const news: Memory[] = [];
+        for (const m of msgs) {
+          if (!m.toId || m.relationType === '错误') continue;
+          const text = m.content.length > 160 ? m.content.slice(0, 160) + '…' : m.content;
+          // 个人记忆：只有说话者自己能读
+          news.push({
+            id: uid('mem'),
+            ownerId: m.fromId,
+            level: 'personal',
+            scope: [m.fromId],
+            type: 'event',
+            content: `第 ${m.round + 1} 轮对「${nameOf(m.toId)}」说（${m.relationType}）：${text}`,
+            createdAt: now,
+            strength: 1,
+            halfLifeMs: EVENT_HALF_LIFE,
+          });
+          // 共同记忆：双方都可读
+          news.push({
+            id: uid('mem'),
+            ownerId: [m.fromId, m.toId].sort().join('|'),
+            level: 'shared',
+            scope: [m.fromId, m.toId],
+            type: 'event',
+            content: `${nameOf(m.fromId)} 与 ${nameOf(m.toId)} 的对话（${m.relationType}）：${text}`,
+            createdAt: now,
+            strength: 1,
+            halfLifeMs: EVENT_HALF_LIFE,
+          });
+        }
+        set((s) => ({ memories: pruneMemories([...memories, ...news]) }));
+      },
+
+      distillMemory: async (neuronId) => {
+        const { neurons, memories, api, task, runMessages } = get();
+        const n = neurons.find((x) => x.id === neuronId);
+        if (!n) return;
+        if (!api.model.trim()) {
+          set({ runError: '请先在「模型设置」里填写模型名' });
+          return;
+        }
+        set({ distilling: neuronId, runError: '' });
+        try {
+          // 平台把该神经元有权读到的记忆 + 近期经历交给模型，推论记忆由模型生成
+          const readable = readableMemories(memories, neuronId).slice(0, 12);
+          const mine = runMessages
+            .filter((m) => m.fromId === neuronId || m.toId === neuronId)
+            .slice(-12);
+          const persona = n.systemPrompt.trim() || `你是「${n.name}」。`;
+          const system =
+            persona +
+            '\n\n【平台规则】请回顾你的经历，提炼最多 3 条你认为最重要、值得记住的结论/印象/约定。' +
+            '每条一行，直接写内容，不要编号。';
+          const user =
+            `总任务：${task}\n\n你的经历：\n` +
+            readable.map((m) => `- [记忆] ${m.content}`).join('\n') +
+            '\n' +
+            mine.map((m) => `- [第${m.round + 1}轮] ${m.content.slice(0, 120)}`).join('\n');
+          const content = await chat({
+            provider: api.provider,
+            baseURL: api.baseURL,
+            apiKey: api.apiKey,
+            model: api.model,
+            temperature: 0.5,
+            messages: [
+              { role: 'system', content: system },
+              { role: 'user', content: user },
+            ],
+          });
+          const lines = content
+            .split('\n')
+            .map((l) => l.replace(/^[\d\-\*\s\.、]+/, '').trim())
+            .filter((l) => l.length >= 6)
+            .slice(0, 3);
+          const now = Date.now();
+          const news: Memory[] = lines.map((l) => ({
+            id: uid('mem'),
+            ownerId: neuronId,
+            level: 'personal',
+            scope: [neuronId],
+            type: 'inference',
+            content: l,
+            createdAt: now,
+            strength: 1,
+            halfLifeMs: INFERENCE_HALF_LIFE,
+          }));
+          set((s) => ({ memories: pruneMemories([...s.memories, ...news]) }));
+        } catch (e) {
+          set({ runError: `整理记忆失败：${e instanceof Error ? e.message : String(e)}` });
+        } finally {
+          set({ distilling: null });
+        }
+      },
+
+      removeMemory: (id) => set((s) => ({ memories: s.memories.filter((m) => m.id !== id) })),
+      clearMemories: () => set({ memories: [] }),
     }),
     {
       name: 'together-v1',
-      partialize: (s) => ({ api: s.api, task: s.task, runRounds: s.runRounds }),
+      partialize: (s) => ({ api: s.api, task: s.task, runRounds: s.runRounds, memories: s.memories }),
     }
   )
 );

@@ -1,4 +1,6 @@
 import { chat } from './llm';
+import { buildMemoryContext } from './memory';
+import type { Memory } from './memory';
 import type { ApiConfig, Edge, Message, Neuron } from './types';
 
 export interface InboxItem {
@@ -22,7 +24,12 @@ function edgeDeliveries(e: Edge, speakerId: string): { toId: string }[] {
  * 平台唯一职责：把收件箱里每条消息标注元信息（来自谁 / 关系 / 权重），
  * 打包进一次 LLM 调用；如何取舍、加权、合并，完全由模型自己判断。
  */
-function buildPrompt(n: Neuron, task: string, items: InboxItem[]): { system: string; user: string } {
+function buildPrompt(
+  n: Neuron,
+  task: string,
+  items: InboxItem[],
+  memories: Memory[]
+): { system: string; user: string } {
   const persona = n.systemPrompt.trim()
     ? n.systemPrompt
     : `你是「${n.name}」${n.role.trim() ? `，身份：${n.role}` : ''}。`;
@@ -34,7 +41,11 @@ function buildPrompt(n: Neuron, task: string, items: InboxItem[]): { system: str
   const list = items
     .map((i) => `- [来自: ${i.fromName}｜关系: ${i.relationType}｜权重: ${i.weight}] ${i.content}`)
     .join('\n');
-  const user = `总任务：${task}\n\n你本轮收到的信息：\n${list}\n\n请综合判断后给出你的回复。`;
+  const memCtx = buildMemoryContext(memories, n.id, 6);
+  const user =
+    `总任务：${task}\n\n` +
+    (memCtx ? `你的记忆（平台按归属范围提供，仅你能读到的部分）：\n${memCtx}\n\n` : '') +
+    `你本轮收到的信息：\n${list}\n\n请综合判断后给出你的回复。`;
   return { system, user };
 }
 
@@ -62,7 +73,8 @@ export async function speakAll(
   api: ApiConfig,
   round: number,
   signal: AbortSignal,
-  onMessage: (m: Message) => void
+  onMessage: (m: Message) => void,
+  memories: Memory[] = []
 ): Promise<Message[]> {
   const speakers = neurons.filter((n) => (inboxMap.get(n.id)?.length ?? 0) > 0);
   const produced: Message[] = [];
@@ -70,7 +82,7 @@ export async function speakAll(
 
   await mapLimit(speakers, 2, async (n) => {
     const items = inboxMap.get(n.id)!;
-    const { system, user } = buildPrompt(n, task, items);
+    const { system, user } = buildPrompt(n, task, items, memories);
 
     let content: string;
     try {

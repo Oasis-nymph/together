@@ -3,6 +3,19 @@ import type { ApiConfig, ChatMessage } from './types';
 const API_URL =
   (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:8787/api/chat';
 
+/** 探测本地代理是否在线（GitHub Pages 静态部署时给用户清晰提示） */
+export async function checkProxy(timeoutMs = 2500): Promise<boolean> {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    const res = await fetch(API_URL.replace('/api/chat', '/api/health'), { signal: ctrl.signal });
+    clearTimeout(t);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export interface ChatOptions {
   provider: ApiConfig['provider'];
   baseURL: string;

@@ -307,6 +307,96 @@ body {
   padding: 8px 10px;
 }
 
+/* ---------- 记忆 ---------- */
+.mem-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mem-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.mem-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.mini {
+  border: 1px solid var(--accent);
+  background: #f0fdf4;
+  color: #15803d;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 8px;
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.mini:hover {
+  background: #dcfce7;
+}
+.mini:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+.mem {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 7px 9px;
+  background: #fbfcfe;
+}
+.mem-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+}
+.badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 0 7px;
+}
+.badge.personal {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+.badge.shared {
+  background: #fef3c7;
+  color: #b45309;
+}
+.badge.inference {
+  background: #f5f3ff;
+  color: #6d28d9;
+}
+.badge.event {
+  background: #f1f5f9;
+  color: #475569;
+}
+.mem-strength {
+  font-size: 10.5px;
+  color: var(--faint);
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.mem-x {
+  font-size: 11px;
+  color: var(--faint);
+  cursor: pointer;
+  padding: 0 2px;
+}
+.mem-x:hover {
+  color: var(--danger);
+}
+.mem-txt {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
 @keyframes pulse {
   0%,
   100% {

@@ -14,7 +14,9 @@
 - ✅ 时间轴（第 4 维）：播放/暂停/拖动，放电波沿网络传播
 - ✅ **真实 AI 对话**：每个神经元调用自己的模型；平台只收集消息并标注元信息（来自谁/关系/权重），**取舍完全交给模型**
 - ✅ 模型支持：OpenAI 兼容接口（OpenAI/DeepSeek/通义/Moonshot 等）+ 本地 Ollama；本地零依赖代理规避 CORS
-- ⏳ 下一步：多层级发散记忆库、涌现场景穷举、新人进入体验
+- ✅ **多层级发散记忆库**：个人记忆仅自己可读、共同记忆双方可读；事件由平台自动记录；推论记忆由该神经元的模型生成（「整理记忆」）；记忆随对话进入下一轮的提示词；随时间衰减
+- ✅ 点击神经元 → 「🧠 记忆」区查看它有权读到的记忆（带强度、可删除）
+- ⏳ 下一步：涌现场景穷举、新人进入体验、群组记忆
 
 ## 运行
 
@@ -36,6 +38,15 @@ npm run build   # 构建到 dist/
 npm start       # 由代理服务器同时托管 dist/，访问 http://localhost:8787
 ```
 
+## 在线访问（GitHub Pages）
+
+仓库已内置自动部署工作流（`.github/workflows/pages.yml`）。只需一次设置：
+
+1. 仓库 **Settings → Pages → Build and deployment → Source** 选 **GitHub Actions**；
+2. 之后每次 `git push` 都会自动构建并部署到 `https://<用户名>.github.io/together/`。
+
+> ⚠️ 说明：Pages 是静态托管——**可视化全部可用**（拖拽、连线、状态光谱、时间轴）；但**真实 AI 对话需要本地代理**（`npm run dev`）。Pages 版点「开始对话」会给出清晰提示。以后要让在线版也能对话，需要把代理部署成后端服务，并配置 `VITE_API_URL`。
+
 > 旧的三维原型保留在 `prototype.html`（无需构建，直接打开；依赖 CDN 加载 Three.js）。
 
 ## 目录结构
@@ -47,6 +58,7 @@ together/
 ├─ PLAN.md             大纲与计划
 ├─ server/server.mjs   零依赖 LLM 代理（OpenAI 兼容 / Ollama 转发 + 生产静态托管）
 ├─ scripts/dev.mjs     一键开发启动（前端 + 代理）
+├─ .github/workflows/  GitHub Pages 自动部署
 ├─ src/
 │  ├─ core/            平台核心（纯 TS，与界面无关）
 │  │  ├─ types.ts      神经元/边/消息/API 设置 类型
@@ -54,8 +66,9 @@ together/
 │  │  ├─ topology.ts   拓扑生成（位置/边）
 │  │  ├─ activity.ts   系统状态光谱 + 放电波生成
 │  │  ├─ llm.ts        LLM 客户端（经本地代理调用）
-│  │  └─ scheduler.ts  调度器：收信 → 标注元信息 → 交给模型 → 广播
-│  ├─ state/store.ts   Zustand 全局状态（图、选中、连线、真实运行、API 设置持久化）
+│  │  ├─ scheduler.ts  调度器：收信 → 标注元信息 → 交给模型 → 广播
+│  │  └─ memory.ts     多层级发散记忆库（归属范围/衰减/推论）
+│  ├─ state/store.ts   Zustand 全局状态（图、选中、连线、真实运行、记忆、持久化）
 │  ├─ three/           3D 场景（React Three Fiber）
 │  │  ├─ Scene.tsx     白空间 + 灯光 + 相机
 │  │  ├─ Neuron.tsx    神经元（点击/拖拽/点亮）
